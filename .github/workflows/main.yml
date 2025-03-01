@@ -1,0 +1,28 @@
+name: Run Migrations on Render
+
+on:
+  push:
+    branches:
+      - main  # Runs when you push to main branch
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: "3.11"
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Apply Migrations
+        env:
+          DATABASE_URL: "postgresql://revanthrk:NYylTjDRlIXvp14G6U4dlZnGEFpm2zaZ@dpg-cv16j6d6l47c73f3ultg-a/phonelert_db"
+        run: |
+          flask db upgrade
