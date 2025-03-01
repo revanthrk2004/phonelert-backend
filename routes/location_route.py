@@ -61,3 +61,21 @@ def get_frequent_locations():
 
     return jsonify([location.to_dict() for location in locations]), 200
 
+@location_bp.route("/delete/<int:location_id>", methods=["DELETE"])
+@jwt_required()
+def delete_location(location_id):
+    """
+    Delete a location if it belongs to the authenticated user.
+    """
+    user_id = get_jwt_identity()
+    location = Location.query.filter_by(id=location_id, user_id=user_id).first()
+
+    if not location:
+        return jsonify({"error": "Location not found or does not belong to the user"}), 404
+
+    db.session.delete(location)
+    db.session.commit()
+
+    return jsonify({"message": "Location deleted successfully!"}), 200
+
+
