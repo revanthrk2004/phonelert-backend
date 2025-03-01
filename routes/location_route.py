@@ -78,4 +78,27 @@ def delete_location(location_id):
 
     return jsonify({"message": "Location deleted successfully!"}), 200
 
+@location_bp.route("/update/<int:location_id>", methods=["PUT"])
+@jwt_required()
+def update_location_name(location_id):
+    """
+    Update the name of an existing location.
+    """
+    user_id = get_jwt_identity()
+    data = request.json
+
+    if "new_name" not in data or not data["new_name"].strip():
+        return jsonify({"error": "New name cannot be empty!"}), 400
+
+    location = Location.query.filter_by(id=location_id, user_id=user_id).first()
+
+    if not location:
+        return jsonify({"error": "Location not found!"}), 404
+
+    location.name = data["new_name"].strip()
+    db.session.commit()
+
+    return jsonify({"message": "Location name updated successfully!"}), 200
+
+
 
