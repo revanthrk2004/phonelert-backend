@@ -4,8 +4,11 @@ from datetime import timedelta  # Ensure this is imported
 class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "supersecretkey")
 
-    # ✅ Use PostgreSQL from Render
-    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "postgresql://revanthrk:NYylTjDRlIXvp14G6U4dlZnGEFpm2zaZ@dpg-cv16j6d6l47c73f3ultg-a/phonelert_db")
+    # ✅ Use External PostgreSQL URL (Not Internal)
+    SQLALCHEMY_DATABASE_URI = os.getenv(
+        "DATABASE_URL",
+        "postgresql://revanthrk:NYylTjDRlIXvp14G6U4dlZnGEFpm2zaZ@dpg-cv16j6d6l47c73f3ultg-a.oregon-postgres.render.com/phonelert_db"
+    )
 
     # Ensure SQLAlchemy uses the correct format (Render sometimes gives `postgres://`)
     if SQLALCHEMY_DATABASE_URI.startswith("postgres://"):
