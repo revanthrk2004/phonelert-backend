@@ -29,11 +29,14 @@ def add_location():
     data = request.json
     user_id = get_jwt_identity()
 
+    if "name" not in data or "latitude" not in data or "longitude" not in data:
+        return jsonify({"error": "Missing required fields (name, latitude, longitude)!"}), 400
+
     location = Location.query.filter_by(user_id=user_id, name=data["name"]).first()
 
     if location:
         update_location_frequency(user_id, data["name"])
-        return jsonify({"message": "Location visit count updated!"}), 200
+        return jsonify({"message": "Location visit count updated!", "location": location.to_dict()}), 200
 
     # Create new location
     new_location = Location(
@@ -48,7 +51,7 @@ def add_location():
     db.session.add(new_location)
     db.session.commit()
 
-    return jsonify({"message": "Location added successfully!"}), 201
+    return jsonify({"message": "Location added successfully!", "location": new_location.to_dict()}), 201
 
 @location_bp.route("/get_frequent_locations", methods=["GET"])
 @jwt_required()
@@ -59,7 +62,38 @@ def get_frequent_locations():
     user_id = get_jwt_identity()
     locations = Location.query.filter_by(user_id=user_id, is_frequent=True).all()
 
+    if not locations:
+        return jsonify({"message": "No frequent locations found!"}), 404
+
     return jsonify([location.to_dict() for location in locations]), 200
+
+@location_bp.route("/get_all_locations", methods=["GET"])
+@jwt_required()
+def get_all_locations():
+    """
+    Fetch all locations belonging to the authenticated user.
+    """
+    user_id = get_jwt_identity()
+    locations = Location.query.filter_by(user_id=user_id).all()
+
+    if not locations:
+        return jsonify({"message": "No locations found!"}), 404
+
+    return jsonify([location.to_dict() for location in locations]), 200
+
+@location_bp.route("/get_location/<int:location_id>", methods=["GET"])
+@jwt_required()
+def get_location_by_id(location_id):
+    """
+    Fetch a single location by its ID.
+    """
+    user_id = get_jwt_identity()
+    location = Location.query.filter_by(id=location_id, user_id=user_id).first()
+
+    if not location:
+        return jsonify({"error": "Location not found!"}), 404
+
+    return jsonify(location.to_dict()), 200
 
 @location_bp.route("/delete/<int:location_id>", methods=["DELETE"])
 @jwt_required()
@@ -98,7 +132,8 @@ def update_location_name(location_id):
     location.name = data["new_name"].strip()
     db.session.commit()
 
-    return jsonify({"message": "Location name updated successfully!"}), 200
+    return jsonify({"message": "Location name updated successfully!", "location": location.to_dict()}), 200
+
 
 
 
