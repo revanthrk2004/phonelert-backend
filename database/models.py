@@ -1,4 +1,6 @@
 from database.db_manager import db
+from datetime import datetime
+
 
 class UserLocation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -10,17 +12,21 @@ class UserLocation(db.Model):
 
 class PhoneStatus(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)  # User reference
-    last_motion_time = db.Column(db.DateTime, default=datetime.utcnow)  # Last motion timestamp
-    last_location = db.Column(db.String(255), nullable=True)  # Last registered location
+    user_id = db.Column(db.Integer, nullable=False)
+    last_known_latitude = db.Column(db.Float, nullable=False)
+    last_known_longitude = db.Column(db.Float, nullable=False)
     is_moving = db.Column(db.Boolean, default=True)  # Motion detected or not
+    last_motion_time = db.Column(db.DateTime, default=datetime.utcnow)  # ✅ FIXED: Now it will work!
 
 class User(db.Model):
+    __tablename__ = "user"
+    __table_args__ = {'extend_existing': True}  # ✅ FIXED: Allows modification of existing table
+
     id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(100), unique=True, nullable=False)
-    password = db.Column(db.String(255), nullable=False)
-    last_motion_time = db.Column(db.DateTime, default=datetime.utcnow)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password = db.Column(db.String(200), nullable=False)
     linked_devices = db.relationship("LinkedDevice", backref="user", lazy=True)
+
 
 class SavedLocation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -36,4 +42,3 @@ class LinkedDevice(db.Model):
     device_name = db.Column(db.String(100), nullable=False)
     fcm_token = db.Column(db.String(255), nullable=False)  # Firebase Token for Notifications
 
-db.create_all()  # Create tables if they don’t exist
