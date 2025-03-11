@@ -6,7 +6,7 @@ import requests  # To send notification to the user's other devices
 # Force Python to recognize 'backend/' as a package
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, current_app
 from flask_cors import CORS
 from database.db_manager import create_app, db
 from routes.auth_route import auth
@@ -14,10 +14,11 @@ from routes.location_route import location_bp
 from flask_sqlalchemy import SQLAlchemy  # Database to store locations
 from geopy.distance import geodesic  # To calculate distance between two coordinates
 from datetime import datetime  # For timestamping last phone activity
-
+from database.models import PhoneStatus  # ✅ Import the model
+from flask_migrate import Migrate
 
 app = create_app()
-
+migrate = Migrate(app, db)  # ✅ Enable migrations
 
 
 # ✅ Enable CORS for all requests
@@ -46,9 +47,6 @@ def handle_options_request():
         response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE, PUT")
         response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
         return response, 200
-
-if __name__ == "__main__":
-    app.run(debug=True)
 
 def check_forgotten_phone(user_id, user_lat, user_lon, is_moving):
     """AI Detection to check if user forgot their phone"""
@@ -111,25 +109,16 @@ def send_alert(user_id, location_name):
     else:
         print(f"❌ Failed to send notification: {response.text}")
 
+
 def ai_background_task():
-    """Continuously check for forgotten phone every 30 seconds"""
-    while True:
-        users = PhoneStatus.query.all()
-        for user_status in users:
-            user_id = user_status.user_id
-            user_data = request.json  # Assuming frontend sends {lat, lon, moving}
+    with current_app.app_context():
+        users = PhoneStatus.query.all()  # Ensure database session is available
+        for user in users:
+            print(f"Checking status for user {user.id}")  
+            time.sleep(60)  # Check every 60 seconds
 
-            user_lat = user_data.get("latitude")
-            user_lon = user_data.get("longitude")
-            is_moving = user_data.get("is_moving")
-
-            check_forgotten_phone(user_id, user_lat, user_lon, is_moving)
-
-        time.sleep(30)  # Check every 30 seconds
-
-# Run the AI process in a separate thread
-ai_thread = threading.Thread(target=ai_background_task, daemon=True)
-ai_thread.start()
+# ✅ Start AI background task in a separate thread
+threading.Thread(target=ai_background_task, daemon=True).start()
 
 @app.route("/ai/detect", methods=["POST"])
 def ai_detect():
@@ -146,3 +135,22 @@ def ai_detect():
     check_forgotten_phone(user_id, latitude, longitude, is_moving)
 
     return jsonify({"message": "AI detection processed successfully!"}), 200
+def send_alert_to_secondary_device(user_id, latitude, longitude):
+    """Send alert to secondary device when phone is forgotten."""
+    try:
+        # Fetch user’s secondary device details from the database
+        user = User.query.filter_by(id=user_id).first()
+        if user and user.secondary_device_token:
+            notification_data = {
+                "title": "Forgotten Phone Alert!",
+                "body": f"Your phone might be left at {latitude}, {longitude}",
+                "token": user.secondary_device_token,
+            }
+            send_notification(notification_data)
+            print("🚨 Alert sent to secondary device!")
+    except Exception as e:
+        print("❌ Error sending alert:", e)
+
+
+if __name__ == "__main__":
+    app.run(debug=True)
