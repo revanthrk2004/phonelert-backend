@@ -16,7 +16,8 @@ from geopy.distance import geodesic  # To calculate distance between two coordin
 from datetime import datetime  # For timestamping last phone activity
 from database.models import PhoneStatus  # ✅ Import the model
 from flask_migrate import Migrate
-
+# Now import your models
+from database.models import PhoneStatus
 app = create_app()
 migrate = Migrate(app, db)  # ✅ Enable migrations
 
