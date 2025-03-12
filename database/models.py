@@ -17,7 +17,8 @@ class PhoneStatus(db.Model):
     last_known_longitude = db.Column(db.Float, nullable=False)
     is_moving = db.Column(db.Boolean, default=True)  # Motion detected or not
     last_motion_time = db.Column(db.DateTime, default=datetime.utcnow)  # ✅ FIXED: Now it will work!
-
+    last_location = db.Column(db.String, nullable=True)
+ 
 class User(db.Model):
     __tablename__ = "user"
     __table_args__ = {'extend_existing': True}  # ✅ FIXED: Allows modification of existing table
