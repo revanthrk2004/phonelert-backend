@@ -4,9 +4,9 @@ import os
 import threading  # To run background tasks for AI detection
 import requests  # To send notification to the user's other devices
 # Force Python to recognize 'backend/' as a package
-
+import firebase_admin
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
-
+from firebase_admin import credentials, messaging
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from database.db_manager import create_app, db
@@ -18,6 +18,13 @@ from datetime import datetime  # For timestamping last phone activity
 from database.models import PhoneStatus  # ✅ Import the model
 from flask_migrate import Migrate
 from sqlalchemy import inspect
+
+# ✅ Use the exact filename from your directory
+FIREBASE_CREDENTIALS = "phonelert-app-af3f8-firebase-adminsdk-fbsvc-34d248a484.json"
+# ✅ Ensure Firebase is initialized only once
+if not firebase_admin._apps:
+    cred = credentials.Certificate(FIREBASE_CREDENTIALS)
+    firebase_admin.initialize_app(cred)
 
 app = create_app()
 migrate = Migrate(app, db)  # ✅ Enable migrations
@@ -60,18 +67,20 @@ def bluetooth_disconnect():
     user_id = data.get("user_id")
 
     if not user_id:
-        print("❌ Missing user ID in request!")
         return jsonify({"error": "User ID is required"}), 400
 
     print(f"🔄 Received Bluetooth disconnect alert for user {user_id}")
 
-    # Fetch user's registered safe locations
+    # Fetch phone status from the database
     phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
 
     if phone_status:
-        # 🚨 ALERT: Smartwatch Disconnected, Check If Phone Is Left Behind
-        print(f"🚨 User {user_id} may have left their phone at {phone_status.last_location}!")
-        send_alert(user_id, phone_status.last_location)
+        # ✅ Ensure `last_location` is not None
+        location_name = phone_status.last_location if phone_status.last_location else "Unknown Location"
+
+        print(f"🚨 User {user_id} may have left their phone at {location_name}!")
+        send_alert(user_id, location_name)
+
         return jsonify({"message": "Disconnection alert received & notification sent"}), 200
 
     print(f"⚠️ No phone status found for user {user_id}")
@@ -79,20 +88,26 @@ def bluetooth_disconnect():
 
 
 
-def send_alert(user_id, location_name):
-    """Send notification when phone is left behind."""
-    notification_data = {
-        "title": "🚨 Forgot Your Phone?",
-        "message": f"You left your phone at {location_name}!",
-        "user_id": user_id
-    }
-    notification_url = "https://phonelert-backend.onrender.com/notify"
-    response = requests.post(notification_url, json=notification_data)
 
-    if response.status_code == 200:
-        print(f"✅ Notification sent: {notification_data}")
-    else:
-        print(f"❌ Failed to send notification: {response.text}")
+
+def send_alert(user_id, location_name):
+    """Send push notification via Firebase Cloud Messaging (FCM) HTTP v1 API."""
+    
+    # ✅ Construct the notification message
+    message = messaging.Message(
+        notification=messaging.Notification(
+            title="🚨 Forgot Your Phone?",
+            body=f"You left your phone at {location_name}!"
+        ),
+        topic=f"user_{user_id}",  # Send notification to user's topic
+    )
+
+    try:
+        # ✅ Send the notification via Firebase
+        response = messaging.send(message)
+        print(f"✅ Notification sent successfully to user {user_id}: {response}")
+    except Exception as e:
+        print(f"❌ Error sending notification: {e}")
 
 
 def ai_background_task():
@@ -133,6 +148,11 @@ def list_routes():
         })
     
     return jsonify({"routes": routes})
+
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"message": "Phonelert API is Running!"}), 200
+
 
 if __name__ == "__main__":
     app.run(debug=True)
