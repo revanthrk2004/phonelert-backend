@@ -121,5 +121,18 @@ def ai_background_task():
 
             time.sleep(60)  # Run check every 60 seconds
 
+@app.route("/debug/routes", methods=["GET"])
+def list_routes():
+    """Return a list of all available routes in the Flask app."""
+    routes = []
+    for rule in app.url_map.iter_rules():
+        routes.append({
+            "endpoint": rule.endpoint,
+            "methods": list(rule.methods),
+            "route": str(rule)
+        })
+    
+    return jsonify({"routes": routes})
+
 if __name__ == "__main__":
     app.run(debug=True)
