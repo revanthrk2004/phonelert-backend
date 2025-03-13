@@ -27,7 +27,7 @@ class User(db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False)
     password = db.Column(db.String(200), nullable=False)
     linked_devices = db.relationship("LinkedDevice", backref="user", lazy=True)
-
+    saved_locations = db.relationship("SavedLocation", backref="user", lazy=True, cascade="all, delete")
 
 class SavedLocation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
