@@ -1,17 +1,17 @@
 import sys
 import os
-
+import json
 import threading  # To run background tasks for AI detection
 import requests  # To send notification to the user's other devices
 # Force Python to recognize 'backend/' as a package
-import firebase_admin
+
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
-from firebase_admin import credentials, messaging
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from database.db_manager import create_app, db
 from routes.auth_route import auth
-  
+
 from flask_sqlalchemy import SQLAlchemy  # Database to store locations
 from geopy.distance import geodesic  # To calculate distance between two coordinates
 from datetime import datetime  # For timestamping last phone activity
@@ -19,12 +19,7 @@ from database.models import PhoneStatus  # ✅ Import the model
 from flask_migrate import Migrate
 from sqlalchemy import inspect
 
-# ✅ Use the exact filename from your directory
-FIREBASE_CREDENTIALS = "phonelert-app-af3f8-firebase-adminsdk-fbsvc-34d248a484.json"
-# ✅ Ensure Firebase is initialized only once
-if not firebase_admin._apps:
-    cred = credentials.Certificate(FIREBASE_CREDENTIALS)
-    firebase_admin.initialize_app(cred)
+
 
 app = create_app()
 migrate = Migrate(app, db)  # ✅ Enable migrations
@@ -89,25 +84,6 @@ def bluetooth_disconnect():
 
 
 
-
-def send_alert(user_id, location_name):
-    """Send push notification via Firebase Cloud Messaging (FCM) HTTP v1 API."""
-    
-    # ✅ Construct the notification message
-    message = messaging.Message(
-        notification=messaging.Notification(
-            title="🚨 Forgot Your Phone?",
-            body=f"You left your phone at {location_name}!"
-        ),
-        topic=f"user_{user_id}",  # Send notification to user's topic
-    )
-
-    try:
-        # ✅ Send the notification via Firebase
-        response = messaging.send(message)
-        print(f"✅ Notification sent successfully to user {user_id}: {response}")
-    except Exception as e:
-        print(f"❌ Error sending notification: {e}")
 
 
 def ai_background_task():
