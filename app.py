@@ -184,7 +184,7 @@ def check_location():
             print(f"✅ Email successfully sent to {email}")
         except Exception as e:
             failed_emails.append(email)
-        print(f"❌ Failed to send email to {email}: {str(e)}")
+            print(f"❌ Failed to send email to {email}: {str(e)}")
 
     if failed_emails:    
             return jsonify({"error": f"Failed to send emails to: {', '.join(failed_emails)}"}), 500
