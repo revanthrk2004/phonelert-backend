@@ -162,7 +162,7 @@ def check_location():
     """Receive location data from React Native and send an email alert if the phone is left behind."""
     data = request.json
     location_name = data.get("locationName")
-    recipient_emails = data.get("emails")  # Optional: Send user ID if available
+    recipient_emails = data.get("emails", [])  # Optional: Send user ID if available
 
     if not location_name or not recipient_emails:
         return jsonify({"error": "Missing location name or emails"}), 400
