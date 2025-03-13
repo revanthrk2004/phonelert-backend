@@ -162,12 +162,15 @@ def check_location():
     """Receive location data from React Native and send an email alert if the phone is left behind."""
     data = request.json
     location_name = data.get("locationName")
-    recipient_emails = data.get("emails", [])  # Optional: Send user ID if available
+    recipient_emails = data.get("emails")  # Optional: Send user ID if available
 
     if not location_name or not recipient_emails:
         return jsonify({"error": "Missing location name or emails"}), 400
 
-    print(f"📍 Phone left at {location_name}. Sending emails to: {', '.join(recipient_emails)}")
+    if not isinstance(recipient_emails, list):  # ✅ Convert single email to list
+        recipient_emails = [recipient_emails]
+
+    print(f"📍 Phone left at {location_name}. Sending emails to {recipient_emails}...")
 
 
     subject = f"🚨 Alert: Possible Phone Left at {location_name}"
@@ -178,6 +181,7 @@ def check_location():
         try:
             msg = Message(subject, recipients=[email], body=body)
             mail.send(msg)
+            print(f"✅ Email successfully sent to {email}")
         except Exception as e:
             failed_emails.append(email)
         print(f"❌ Failed to send email to {email}: {str(e)}")
