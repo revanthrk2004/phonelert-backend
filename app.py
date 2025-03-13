@@ -92,21 +92,25 @@ def bluetooth_disconnect():
     return jsonify({"message": "Disconnection alert received, but no stored location"}), 200
 
 
-def send_alert(user_id, location_name, recipient_email):
-    """Send an email alert when the user leaves their phone behind."""
-    try:
-        msg = Message(
-            subject="📍 Phone Left Behind Alert!",
-            recipients=[recipient_email],  # ✅ Replace with user's email
-            body=f"Hey! It looks like you left your phone at {location_name}. Please check!"
-        )
-        mail.send(msg)
-        print(f"✅ Email alert sent to user {recipient_email} about {location_name}")
+@app.route("/send-alert", methods=["POST"])
+def send_alert():
+    data = request.json
+    location_name = data.get("locationName")
+    emails = data.get("emails", [])
 
-    except Exception as e:
-        print(f"❌ Error sending email: {e}")
+    if not emails:
+        return jsonify({"error": "No emails provided"}), 400
+    subject="📍 Phone Left Behind Alert!",
+    body=f"Hey! It looks like you left your phone at {location_name}. Please check!"
+        
+    for email in emails:
+        try:
+            msg = Message(subject, recipients=[email], body=body)
+            mail.send(msg)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
 
-
+    return jsonify({"success": True, "message": "Emails sent successfully!"})
 
 
 def ai_background_task():
@@ -158,16 +162,30 @@ def check_location():
     """Receive location data from React Native and send an email alert if the phone is left behind."""
     data = request.json
     location_name = data.get("locationName")
-    recipient_email = data.get("email")  # Optional: Send user ID if available
+    recipient_emails = data.get("emails", [])  # Optional: Send user ID if available
 
-    if not location_name or not recipient_email:
-        return jsonify({"error": "Missing location name or email"}), 400
+    if not location_name or not recipient_emails:
+        return jsonify({"error": "Missing location name or emails"}), 400
 
-    print(f"📍 Phone left at {location_name}. Sending email to {recipient_email}... ")
+    print(f"📍 Phone left at {location_name}. Sending emails to: {', '.join(recipient_emails)}")
 
-    send_alert(user_id, location_name, recipient_email)  # 🔹 Call the function to send an email
 
-    return jsonify({"message": f"✅ Email sent to {recipient_email} about {location_name}."}), 200
+    subject = f"🚨 Alert: Possible Phone Left at {location_name}"
+    body = f"Your phone might have been left at {location_name}. Please check your location immediately!"
+
+    failed_emails = []
+    for email in recipient_emails:
+        try:
+            msg = Message(subject, recipients=[email], body=body)
+            mail.send(msg)
+        except Exception as e:
+            failed_emails.append(email)
+        print(f"❌ Failed to send email to {email}: {str(e)}")
+
+    if failed_emails:    
+            return jsonify({"error": f"Failed to send emails to: {', '.join(failed_emails)}"}), 500
+
+    return jsonify({"message": f"✅ Emails sent to: {', '.join(recipient_emails)}"}), 200
 
 
 
