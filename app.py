@@ -152,13 +152,32 @@ def list_routes():
 def home():
     return jsonify({"message": "Phonelert API is Running!"}), 200
 
+
+@app.route("/check-location", methods=["POST"])
+def check_location():
+    """Receive location data from React Native and send an email alert if the phone is left behind."""
+    data = request.json
+    location_name = data.get("locationName")
+    user_id = data.get("user_id", "Unknown User")  # Optional: Send user ID if available
+
+    if not location_name:
+        return jsonify({"error": "Missing location name"}), 400
+
+    print(f"📍 Phone left at {location_name}. Sending email alert...")
+
+    send_alert(user_id, location_name)  # 🔹 Call the function to send an email
+
+    return jsonify({"message": f"✅ Email sent! Phone left at {location_name}."}), 200
+
+
+
 @app.route("/test-email", methods=["GET"])
 def test_email():
     """Send a test email to verify the setup"""
     try:
         msg = Message(
             "🔔 Phonelert Test Email",
-            recipients=["revanthrk2004@gmail.com"],  # ✅ Change to your email
+            recipients=["revanthkkrishnan@gmail.com"],  # ✅ Change to your email
             body="Hello! This is a test email from Phonelert to verify email alerts.",
         )
         mail.send(msg)
