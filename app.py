@@ -92,16 +92,16 @@ def bluetooth_disconnect():
     return jsonify({"message": "Disconnection alert received, but no stored location"}), 200
 
 
-def send_alert(user_id, location_name):
+def send_alert(user_id, location_name, recipient_email):
     """Send an email alert when the user leaves their phone behind."""
     try:
         msg = Message(
             subject="📍 Phone Left Behind Alert!",
-            recipients=["revanthkkrishnan@gmail.com"],  # ✅ Replace with user's email
+            recipients=[recipient_email],  # ✅ Replace with user's email
             body=f"Hey! It looks like you left your phone at {location_name}. Please check!"
         )
         mail.send(msg)
-        print(f"✅ Email alert sent to user {user_id} about {location_name}")
+        print(f"✅ Email alert sent to user {recipient_email} about {location_name}")
 
     except Exception as e:
         print(f"❌ Error sending email: {e}")
@@ -158,16 +158,16 @@ def check_location():
     """Receive location data from React Native and send an email alert if the phone is left behind."""
     data = request.json
     location_name = data.get("locationName")
-    user_id = data.get("user_id", "Unknown User")  # Optional: Send user ID if available
+    recipient_email = data.get("email")  # Optional: Send user ID if available
 
-    if not location_name:
-        return jsonify({"error": "Missing location name"}), 400
+    if not location_name or not recipient_email:
+        return jsonify({"error": "Missing location name or email"}), 400
 
-    print(f"📍 Phone left at {location_name}. Sending email alert...")
+    print(f"📍 Phone left at {location_name}. Sending email to {recipient_email}... ")
 
-    send_alert(user_id, location_name)  # 🔹 Call the function to send an email
+    send_alert(user_id, location_name, recipient_email)  # 🔹 Call the function to send an email
 
-    return jsonify({"message": f"✅ Email sent! Phone left at {location_name}."}), 200
+    return jsonify({"message": f"✅ Email sent to {recipient_email} about {location_name}."}), 200
 
 
 
@@ -177,7 +177,7 @@ def test_email():
     try:
         msg = Message(
             "🔔 Phonelert Test Email",
-            recipients=["revanthkkrishnan@gmail.com"],  # ✅ Change to your email
+            recipients=["adhithyahere7@gmail.com"],  # ✅ Change to your email
             body="Hello! This is a test email from Phonelert to verify email alerts.",
         )
         mail.send(msg)
