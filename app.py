@@ -4,6 +4,7 @@ import json
 import threading  # To run background tasks for AI detection
 import requests  # To send notification to the user's other devices
 # Force Python to recognize 'backend/' as a package
+from flask_mail import Mail, Message  # ✅ Add Flask-Mail
 
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
@@ -24,6 +25,15 @@ from sqlalchemy import inspect
 app = create_app()
 migrate = Migrate(app, db)  # ✅ Enable migrations
 
+# ✅ Configure Flask-Mail
+app.config["MAIL_SERVER"] = "smtp.gmail.com"
+app.config["MAIL_PORT"] = 587
+app.config["MAIL_USE_TLS"] = True
+app.config["MAIL_USERNAME"] = os.getenv("EMAIL_USER")  # ✅ Uses .env file
+app.config["MAIL_PASSWORD"] = os.getenv("EMAIL_PASSWORD")  # ✅ Uses .env file
+app.config["MAIL_DEFAULT_SENDER"] = os.getenv("EMAIL_USER")  # ✅ Uses your email as sender
+
+mail = Mail(app)  # ✅ Initialize Flask-Mail
 
 
 # ✅ Enable CORS for all requests
@@ -82,6 +92,19 @@ def bluetooth_disconnect():
     return jsonify({"message": "Disconnection alert received, but no stored location"}), 200
 
 
+def send_alert(user_id, location_name):
+    """Send an email alert when the user leaves their phone behind."""
+    try:
+        msg = Message(
+            subject="📍 Phone Left Behind Alert!",
+            recipients=["revanthkkrishnan@gmail.com"],  # ✅ Replace with user's email
+            body=f"Hey! It looks like you left your phone at {location_name}. Please check!"
+        )
+        mail.send(msg)
+        print(f"✅ Email alert sent to user {user_id} about {location_name}")
+
+    except Exception as e:
+        print(f"❌ Error sending email: {e}")
 
 
 
@@ -129,6 +152,19 @@ def list_routes():
 def home():
     return jsonify({"message": "Phonelert API is Running!"}), 200
 
+@app.route("/test-email", methods=["GET"])
+def test_email():
+    """Send a test email to verify the setup"""
+    try:
+        msg = Message(
+            "🔔 Phonelert Test Email",
+            recipients=["revanthrk2004@gmail.com"],  # ✅ Change to your email
+            body="Hello! This is a test email from Phonelert to verify email alerts.",
+        )
+        mail.send(msg)
+        return jsonify({"message": "✅ Test email sent successfully!"}), 200
+    except Exception as e:
+        return jsonify({"error": f"❌ Failed to send email: {str(e)}"}), 500
 
 
 if __name__ == "__main__":
