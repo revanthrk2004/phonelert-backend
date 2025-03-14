@@ -159,27 +159,33 @@ def send_repeated_alerts(user_id, recipient_emails):
 
 @app.route("/start-tracking", methods=["POST"])
 def start_tracking():
-    """Activates live tracking only if the phone stays in one place for 3 minutes."""
+    """Activates tracking only if the phone stays in one place for 3 minutes."""
     data = request.json
+    print(f"📥 Received start-tracking request: {data}")
+    sys.stdout.flush()  # ✅ Force log to appear in Render
+
     user_id = data.get("user_id")
     recipient_emails = data.get("emails", [])
 
     if not user_id or not recipient_emails:
+        print("❌ Missing user_id or emails in request!")
+        sys.stdout.flush()  # ✅ Force log to appear
         return jsonify({"error": "User ID and emails are required"}), 400
 
-    # ✅ If tracking is already running, don't start a new thread
     if user_id in tracking_users and tracking_users[user_id]["active"]:
+        print(f"⚠️ Tracking is already active for user {user_id}")
+        sys.stdout.flush()  # ✅ Force log to appear
         return jsonify({"message": "Tracking is already active for this user"}), 200
 
     tracking_users[user_id] = {"active": True, "emails": recipient_emails}
 
-    # ✅ Start tracking in a background thread
     tracking_thread = threading.Thread(target=send_repeated_alerts, args=(user_id, recipient_emails), daemon=True)
     tracking_thread.start()
 
-    print(f"🚀 Tracking started for user {user_id}, checking if phone stays in one place for 3 minutes.")
-
+    print(f"🚀 Started tracking for user {user_id}")
+    sys.stdout.flush()  # ✅ Force log to appear
     return jsonify({"message": "✅ Tracking started. If phone stays in one place for 3 minutes, an alert will be sent."}), 200
+
 
 
 
@@ -239,21 +245,22 @@ def monitor_phone_location(user_id):
 
 @app.route("/stop-tracking", methods=["GET", "POST"])
 def stop_tracking():
-    """Stops the repeated email alerts when user clicks the stop link."""
+    """Stops repeated email alerts when user clicks stop tracking link."""
     user_id = request.args.get("user_id") or request.json.get("user_id")
+    print(f"📥 Received stop-tracking request for user {user_id}")
+    sys.stdout.flush()  # ✅ Force log to appear
 
     if not user_id or user_id not in tracking_users:
+        print("⚠️ Tracking was not active, ignoring stop request.")
+        sys.stdout.flush()  # ✅ Force log to appear
         return jsonify({"error": "Tracking was not active for this user"}), 400
 
-    # ✅ Stop tracking & remove old alerts
     tracking_users[user_id]["active"] = False
-    if user_id in tracking_users:
-        del tracking_users[user_id]  # ✅ Remove user from tracking list
+    del tracking_users[user_id]
 
     print(f"🛑 Stopped tracking for user {user_id}")
-
+    sys.stdout.flush()  # ✅ Force log to appear
     return jsonify({"message": "✅ Tracking stopped successfully"}), 200
-
 
 
 
