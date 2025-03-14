@@ -72,25 +72,46 @@ def handle_options_request():
 
 @app.route("/check-location", methods=["POST"])
 def check_location():
-    """Only sends alerts if tracking is active."""
+    """Receives live location data and sends an alert with the latest coordinates."""
     data = request.json
     user_id = data.get("user_id")
-    location_name = data.get("locationName")
-    recipient_emails = data.get("emails", [])
+    latitude = data.get("latitude")  # ✅ Get real-time latitude
+    longitude = data.get("longitude")  # ✅ Get real-time longitude
+    recipient_emails = data.get("emails", [])  
 
-    if not user_id or not location_name or not recipient_emails:
-        return jsonify({"error": "Missing data"}), 400
+    if not user_id or latitude is None or longitude is None or not recipient_emails:
+        return jsonify({"error": "Missing required data"}), 400
 
-    # ✅ Do NOT send email unless tracking is active
-    if user_id not in tracking_users or not tracking_users[user_id]["active"]:
-        print(f"🚫 Ignoring check-location for {user_id}, tracking is OFF.")
-        return jsonify({"message": "Tracking is not active, no alert sent."}), 200
+    print(f"📍 Live location received: {latitude}, {longitude}")
 
-    print(f"📍 Phone left at {location_name}. Sending alert...")
+    # ✅ Build Google Maps link using the real-time coordinates
+    google_maps_link = f"https://www.google.com/maps?q={latitude},{longitude}"
+    stop_tracking_link = f"https://phonelert-backend.onrender.com/stop-tracking?user_id={user_id}"
 
-    send_email_alert(user_id)  # ✅ Only one function sends email
+    subject = f"🚨 Urgent: Your Phone's Live Location"
+    body = f"""
+    Your phone's latest live location:
+    
+    📍 **Live Location:** {google_maps_link}
 
-    return jsonify({"message": "✅ Email alert sent successfully."}), 200
+    🛑 **Stop Tracking:** Click here → [Stop Tracking]({stop_tracking_link})
+    """
+
+    failed_emails = []
+    for email in recipient_emails:
+        try:
+            msg = Message(subject, recipients=[email], body=body)
+            mail.send(msg)
+            print(f"✅ Email sent to {email}")
+        except Exception as e:
+            failed_emails.append(email)
+            print(f"❌ Failed to send email to {email}: {str(e)}")
+
+    if failed_emails:    
+        return jsonify({"error": f"Failed to send emails to: {', '.join(failed_emails)}"}), 500
+
+    return jsonify({"message": f"✅ Live location emails sent to: {', '.join(recipient_emails)}"}), 200
+
 
 def send_email_alert(user_id, live_lat=None, live_long=None):
     """Sends an alert email with either live location, last known DB location, or a saved location."""
@@ -114,7 +135,7 @@ def send_email_alert(user_id, live_lat=None, live_long=None):
 
         recipient_emails = tracking_users.get(user_id, {}).get("emails", [])
         google_maps_link = f"https://www.google.com/maps?q={live_lat},{live_long}"
-        stop_tracking_link = f"https://phonelert-backend.onrender.com/stop-tracking?user_id={user_id}"
+        stop_tracking_link = f"https://phonelert-backend.onrender.com/stop-tracking?user_id={123}"
 
         subject = "🚨 Urgent: Your Phone is Still Left Behind!"
         body = f"""
