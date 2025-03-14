@@ -12,12 +12,11 @@ class UserLocation(db.Model):
 
 class PhoneStatus(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
-    last_known_latitude = db.Column(db.Float, nullable=False)
-    last_known_longitude = db.Column(db.Float, nullable=False)
-    is_moving = db.Column(db.Boolean, default=True)  # Motion detected or not
-    last_motion_time = db.Column(db.DateTime, default=datetime.utcnow)  # ✅ FIXED: Now it will work!
-    last_location = db.Column(db.String, nullable=True)
+    user_id = db.Column(db.String(100), unique=True, nullable=False)
+    last_latitude = db.Column(db.Float, nullable=True)
+    last_longitude = db.Column(db.Float, nullable=True)
+    tracking_active = db.Column(db.Boolean, default=False)  # ✅ NEW FLAG
+
  
 class User(db.Model):
     __tablename__ = "user"
