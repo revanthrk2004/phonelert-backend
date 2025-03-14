@@ -91,35 +91,28 @@ def check_location():
 
     return jsonify({"message": "✅ Email alert sent successfully."}), 200
 
-def send_email_alert(user_id):
-    """Sends an alert email with the last live location and stop-tracking link."""
+def send_email_alert(user_id, live_lat=None, live_long=None):
+    """Sends an alert email with the latest live location."""
     with app.app_context():
-        phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
+        # If live location is provided, use it. Otherwise, fallback to DB location.
+        if live_lat is None or live_long is None:
+            phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
+            if phone_status:
+                live_lat, live_long = phone_status.last_latitude, phone_status.last_longitude
 
-        if not phone_status:
-            print(f"⚠️ No phone status found for user {user_id}.")
+        if live_lat is None or live_long is None:
+            print(f"⚠️ No location data available for user {user_id}. Skipping alert.")
             return
 
         recipient_emails = tracking_users.get(user_id, {}).get("emails", [])
-
-        # ✅ Fetch the latest location from the database
-        phone_status = db.session.query(PhoneStatus).filter_by(user_id=user_id).first()
-
-        # ✅ Ensure location is not None
-        if not phone_status or phone_status.last_latitude is None or phone_status.last_longitude is None:
-            print(f"❌ ERROR: No live location data found for user {user_id}")
-            return
-
-        # ✅ Format the Google Maps link with the latest latitude & longitude
-        last_lat, last_long = phone_status.last_latitude, phone_status.last_longitude
-        google_maps_link = f"https://www.google.com/maps?q={last_lat},{last_long}"
+        google_maps_link = f"https://www.google.com/maps?q={live_lat},{live_long}"
         stop_tracking_link = f"https://phonelert-backend.onrender.com/stop-tracking?user_id={user_id}"
 
         subject = "🚨 Urgent: Your Phone is Still Left Behind!"
         body = f"""
         Your phone has not been retrieved yet. Please check its last known location!
         
-        📍 **Last Live Location:** {google_maps_link}
+        📍 **Last Known Location:** {google_maps_link}
 
         🛑 **Stop Tracking:** Click here to stop alerts → [Stop Tracking]({stop_tracking_link})
         """
@@ -128,7 +121,7 @@ def send_email_alert(user_id):
             try:
                 msg = Message(subject, recipients=[email], body=body)
                 mail.send(msg)
-                print(f"✅ Email sent to {email} with last live location: {google_maps_link}")
+                print(f"✅ Email sent to {email}")
             except Exception as e:
                 print(f"❌ Failed to send email to {email}: {str(e)}")
 
