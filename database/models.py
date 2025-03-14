@@ -2,14 +2,15 @@ from database.db_manager import db
 from datetime import datetime
 
 
+
 class UserLocation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)  # ✅ FK to User Table
+    user_id = db.Column(db.Integer, nullable=False)  # User reference
     name = db.Column(db.String(100), nullable=False)  # Location name
     latitude = db.Column(db.Float, nullable=False)
     longitude = db.Column(db.Float, nullable=False)
-    radius = db.Column(db.Integer, default=50)  # ✅ Default radius
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)  # ✅ Track when the location was added
+    radius = db.Column(db.Integer, default=50)  # Radius in meters
+    location_type = db.Column(db.String(10), default="unknown")  # ✅ New column (safe, unsafe, unknown)
 
 
 class PhoneStatus(db.Model):
@@ -20,7 +21,16 @@ class PhoneStatus(db.Model):
     tracking_active = db.Column(db.Boolean, default=False)  # ✅ Tracks if monitoring is active
 
 
- 
+class AlertHistory(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, nullable=False)
+    latitude = db.Column(db.Float, nullable=False)
+    longitude = db.Column(db.Float, nullable=False)
+    location_type = db.Column(db.String(50), nullable=False)  # safe, unsafe, unknown
+    ai_decision = db.Column(db.String(20), nullable=False)  # sent, skipped
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class User(db.Model):
     __tablename__ = "user"
     __table_args__ = {'extend_existing': True}  # ✅ FIXED: Allows modification of existing table

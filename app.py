@@ -114,36 +114,48 @@ def check_location():
 
 
 def send_email_alert(user_id, live_lat=None, live_long=None):
-    """Sends an alert email with either live location, last known DB location, or a saved location."""
+    """Sends an alert email with either live location or saved location."""
+
     with app.app_context():
-        # 1️⃣ Try to use the live location (from React Native)
+        # 1️⃣ Always try LIVE LOCATION first
         if live_lat is None or live_long is None:
             phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
             if phone_status:
                 live_lat, live_long = phone_status.last_latitude, phone_status.last_longitude
 
-        # 2️⃣ If no live location & no DB location, find a saved location
-        saved_location = UserLocation.query.filter_by(user_id=user_id).first()  # Gets the first saved location (e.g., Home)
-        if (live_lat is None or live_long is None) and saved_location:
-            live_lat, live_long = saved_location.latitude, saved_location.longitude
-            print(f"📍 Using saved location '{saved_location.name}' instead.")
-
-        # 3️⃣ If STILL no location, send a warning
+        # 2️⃣ If no live location, DEFAULT to Lewisham
         if live_lat is None or live_long is None:
-            print(f"⚠️ No location data available for user {user_id}. Skipping alert.")
-            return
+            live_lat, live_long = 51.4613, -0.0081  # Lewisham, London
+            print("⚠️ No live location. Using default Lewisham, London.")
 
+        # 3️⃣ Ensure AI Logs This Alert
+        new_alert = AlertHistory(
+            user_id=user_id,
+            latitude=live_lat,
+            longitude=live_long,
+            location_type="unsafe",  # Example: We assume AI marks it unsafe
+            ai_decision="sent",  # AI decided to send alert
+            timestamp=datetime.utcnow()
+        )
+
+        try:
+            db.session.add(new_alert)
+            db.session.commit()
+            print(f"✅ AI Alert Logged: {live_lat}, {live_long}")
+        except Exception as e:
+            db.session.rollback()
+            print(f"❌ AI Logging Failed: {e}")
+
+        # 4️⃣ Send Email
         recipient_emails = tracking_users.get(user_id, {}).get("emails", [])
         google_maps_link = f"https://www.google.com/maps?q={live_lat},{live_long}"
-        stop_tracking_link = f"https://phonelert-backend.onrender.com/stop-tracking?user_id={123}"
+        stop_tracking_link = f"https://phonelert-backend.onrender.com/stop-tracking?user_id={user_id}"
 
         subject = "🚨 Urgent: Your Phone is Still Left Behind!"
         body = f"""
         Your phone has not been retrieved yet. Please check its last known location!
-        
-        📍 **Last Known Location:** {google_maps_link}
 
-        🏠 **Saved Location (if available):** {saved_location.name if saved_location else "Not Found"}
+        📍 **Last Known Location:** {google_maps_link}
 
         🛑 **Stop Tracking:** Click here to stop alerts → [Stop Tracking]({stop_tracking_link})
         """
@@ -155,8 +167,6 @@ def send_email_alert(user_id, live_lat=None, live_long=None):
                 print(f"✅ Email sent to {email}")
             except Exception as e:
                 print(f"❌ Failed to send email to {email}: {str(e)}")
-
-
 
 def send_repeated_alerts(user_id, recipient_emails):
     """Sends email alerts only if the phone remains in the same location for 3 minutes."""
