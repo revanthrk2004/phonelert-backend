@@ -69,6 +69,50 @@ def handle_options_request():
         return response, 200
 
 
+@app.route("/check-location", methods=["POST"])
+def check_location():
+    """Send an alert ONLY if tracking is active."""
+    data = request.json
+    location_name = data.get("locationName")
+    user_id = data.get("user_id")  
+    recipient_emails = data.get("emails", [])  
+
+    if not location_name or not recipient_emails or not user_id:
+        return jsonify({"error": "Missing data"}), 400
+
+    # ✅ Check if tracking is active before sending alerts
+    if user_id not in tracking_users or not tracking_users[user_id]["active"]:
+        print(f"🚫 Ignoring check-location for {user_id}, tracking is OFF.")
+        return jsonify({"message": "Tracking is not active, no alert sent."}), 200
+
+    print(f"📍 Phone left at {location_name}. Sending emails to {recipient_emails}...")
+
+    subject = f"🚨 Alert: Possible Phone Left at {location_name}"
+    google_maps_link = f"https://www.google.com/maps?q={location_name}"
+    stop_tracking_link = f"https://phonelert-backend.onrender.com/stop-tracking?user_id={user_id}"
+    
+    body = f"""
+    Your phone might have been left at {location_name}.
+    
+    📍 **Location:** {google_maps_link}
+
+    🛑 **Stop Tracking:** Click here → [Stop Tracking]({stop_tracking_link})
+    """
+
+    failed_emails = []
+    for email in recipient_emails:
+        try:
+            msg = Message(subject, recipients=[email], body=body)
+            mail.send(msg)
+            print(f"✅ Email sent to {email}")
+        except Exception as e:
+            failed_emails.append(email)
+            print(f"❌ Failed to send email to {email}: {str(e)}")
+
+    if failed_emails:    
+        return jsonify({"error": f"Failed to send emails to: {', '.join(failed_emails)}"}), 500
+
+    return jsonify({"message": f"✅ Emails sent to: {', '.join(recipient_emails)}"}), 200
 
 def send_email_alert(user_id):
     """Sends an alert email with a stop-tracking link and Google Maps location."""
@@ -146,17 +190,20 @@ def start_tracking():
     if not user_id or not recipient_emails:
         return jsonify({"error": "User ID and emails are required"}), 400
 
+    # ✅ If tracking is already running, don't start a new thread
     if user_id in tracking_users and tracking_users[user_id]["active"]:
         return jsonify({"message": "Tracking is already active for this user"}), 200
 
     tracking_users[user_id] = {"active": True, "emails": recipient_emails}
 
+    # ✅ Start tracking in a background thread
     tracking_thread = threading.Thread(target=send_repeated_alerts, args=(user_id, recipient_emails), daemon=True)
     tracking_thread.start()
 
     print(f"🚀 Tracking started for user {user_id}, checking if phone stays in one place for 3 minutes.")
 
     return jsonify({"message": "✅ Tracking started. If phone stays in one place for 3 minutes, an alert will be sent."}), 200
+
 
 
 
@@ -221,10 +268,16 @@ def stop_tracking():
     if not user_id or user_id not in tracking_users:
         return jsonify({"error": "Tracking was not active for this user"}), 400
 
+    # ✅ Stop tracking & remove old alerts
     tracking_users[user_id]["active"] = False
+    if user_id in tracking_users:
+        del tracking_users[user_id]  # ✅ Remove user from tracking list
+
     print(f"🛑 Stopped tracking for user {user_id}")
 
     return jsonify({"message": "✅ Tracking stopped successfully"}), 200
+
+
 
 
 
@@ -246,41 +299,6 @@ def list_routes():
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"message": "Phonelert API is Running!"}), 200
-
-
-@app.route("/check-location", methods=["POST"])
-def check_location():
-    """Receive location data from React Native and send an email alert if the phone is left behind."""
-    data = request.json
-    location_name = data.get("locationName")
-    recipient_emails = data.get("emails", [])  # Optional: Send user ID if available
-
-    if not location_name or not recipient_emails:
-        return jsonify({"error": "Missing location name or emails"}), 400
-
-    if not isinstance(recipient_emails, list):  # ✅ Convert single email to list
-        recipient_emails = [recipient_emails]
-
-    print(f"📍 Phone left at {location_name}. Sending emails to {recipient_emails}...")
-
-
-    subject = f"🚨 Alert: Possible Phone Left at {location_name}"
-    body = f"Your phone might have been left at {location_name}. Please check your location immediately!"
-
-    failed_emails = []
-    for email in recipient_emails:
-        try:
-            msg = Message(subject, recipients=[email], body=body)
-            mail.send(msg)
-            print(f"✅ Email successfully sent to {email}")
-        except Exception as e:
-            failed_emails.append(email)
-            print(f"❌ Failed to send email to {email}: {str(e)}")
-
-    if failed_emails:    
-            return jsonify({"error": f"Failed to send emails to: {', '.join(failed_emails)}"}), 500
-
-    return jsonify({"message": f"✅ Emails sent to: {', '.join(recipient_emails)}"}), 200
 
 
 
