@@ -92,14 +92,21 @@ def check_location():
     return jsonify({"message": "✅ Email alert sent successfully."}), 200
 
 def send_email_alert(user_id, live_lat=None, live_long=None):
-    """Sends an alert email with the latest live location."""
+    """Sends an alert email with either live location, last known DB location, or a saved location."""
     with app.app_context():
-        # If live location is provided, use it. Otherwise, fallback to DB location.
+        # 1️⃣ Try to use the live location (from React Native)
         if live_lat is None or live_long is None:
             phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
             if phone_status:
                 live_lat, live_long = phone_status.last_latitude, phone_status.last_longitude
 
+        # 2️⃣ If no live location & no DB location, find a saved location
+        saved_location = UserLocation.query.filter_by(user_id=user_id).first()  # Gets the first saved location (e.g., Home)
+        if (live_lat is None or live_long is None) and saved_location:
+            live_lat, live_long = saved_location.latitude, saved_location.longitude
+            print(f"📍 Using saved location '{saved_location.name}' instead.")
+
+        # 3️⃣ If STILL no location, send a warning
         if live_lat is None or live_long is None:
             print(f"⚠️ No location data available for user {user_id}. Skipping alert.")
             return
@@ -113,6 +120,8 @@ def send_email_alert(user_id, live_lat=None, live_long=None):
         Your phone has not been retrieved yet. Please check its last known location!
         
         📍 **Last Known Location:** {google_maps_link}
+
+        🏠 **Saved Location (if available):** {saved_location.name if saved_location else "Not Found"}
 
         🛑 **Stop Tracking:** Click here to stop alerts → [Stop Tracking]({stop_tracking_link})
         """
