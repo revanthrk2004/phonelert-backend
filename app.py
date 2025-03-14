@@ -103,6 +103,36 @@ def send_email_alert(user_id):
                 print(f"❌ Failed to send email to {email}: {str(e)}")
 
 
+def send_repeated_alerts(user_id, recipient_emails):
+    """Sends email alerts only if the phone remains in the same location for 3 minutes."""
+    with app.app_context():
+        phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
+
+        if not phone_status:
+            print(f"⚠️ No phone status found for user {user_id}.")
+            return
+
+        last_lat, last_long = phone_status.last_latitude, phone_status.last_longitude
+        last_update_time = datetime.utcnow()
+
+        while tracking_users.get(user_id, {}).get("active", False):
+            time.sleep(180)  # ✅ Wait for 3 minutes
+
+            phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
+            if not phone_status:
+                print(f"⚠️ No phone status found for user {user_id}. Stopping tracking.")
+                break
+
+            current_lat, current_long = phone_status.last_latitude, phone_status.last_longitude
+
+            # ✅ Check if phone stayed in the same spot for 3 minutes
+            if (current_lat, current_long) == (last_lat, last_long):
+                print(f"📌 Phone has stayed in the same location for 3 minutes. Sending alert...")
+                send_email_alert(user_id)  # ✅ Send email alert
+
+            # ✅ Update last known position and timestamp
+            last_lat, last_long = current_lat, current_long
+            last_update_time = datetime.utcnow()
 
 
 
