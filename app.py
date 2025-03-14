@@ -92,6 +92,41 @@ def bluetooth_disconnect():
     print(f"⚠️ No phone status found for user {user_id}")
     return jsonify({"message": "Disconnection alert received, but no stored location"}), 200
 
+tracking_users = {}  # ✅ Store tracking status per user
+
+def send_email_alert(user_id):
+    """Sends an alert email with a stop-tracking link and Google Maps location."""
+    with app.app_context():
+        phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
+
+        if not phone_status:
+            print(f"⚠️ No phone status found for user {user_id}.")
+            return
+
+        recipient_emails = tracking_users.get(user_id, {}).get("emails", [])
+
+        last_lat, last_long = phone_status.last_latitude, phone_status.last_longitude
+        google_maps_link = f"https://www.google.com/maps?q={last_lat},{last_long}"
+        stop_tracking_link = f"https://phonelert-backend.onrender.com/stop-tracking?user_id={user_id}"
+
+        subject = "🚨 Urgent: Your Phone is Still Left Behind!"
+        body = f"""
+        Your phone has not been retrieved yet. Please check its last known location!
+        
+        📍 **Last Known Location:** {google_maps_link}
+
+        🛑 **Stop Tracking:** Click here to stop alerts → [Stop Tracking]({stop_tracking_link})
+        """
+
+        for email in recipient_emails:
+            try:
+                msg = Message(subject, recipients=[email], body=body)
+                mail.send(msg)
+                print(f"✅ Email sent to {email}")
+            except Exception as e:
+                print(f"❌ Failed to send email to {email}: {str(e)}")
+
+
 
 @app.route("/send-alert", methods=["POST"])
 def send_alert():
@@ -112,11 +147,11 @@ def send_alert():
             return jsonify({"error": str(e)}), 500
 
     return jsonify({"success": True, "message": "Emails sent successfully!"})
-tracking_users = {}  # ✅ Store tracking status per user
+
 
 @app.route("/start-tracking", methods=["POST"])
 def start_tracking():
-    """Activates live tracking for a user."""
+    """Activates live tracking only if the phone stays in one place for 3 minutes."""
     data = request.json
     user_id = data.get("user_id")
     recipient_emails = data.get("emails", [])
@@ -124,59 +159,83 @@ def start_tracking():
     if not user_id or not recipient_emails:
         return jsonify({"error": "User ID and emails are required"}), 400
 
-    # ✅ Stop existing tracking if it's running
-    if tracking_users.get(user_id, False):
-        tracking_users[user_id] = False
-        time.sleep(1)  # ⏳ Small delay to allow old thread to stop
+    if user_id in tracking_users and tracking_users[user_id]["active"]:
+        return jsonify({"message": "Tracking is already active for this user"}), 200
 
-    # ✅ Start new tracking
-    tracking_users[user_id] = True
+    tracking_users[user_id] = {"active": True, "emails": recipient_emails}
+
     tracking_thread = threading.Thread(target=send_repeated_alerts, args=(user_id, recipient_emails), daemon=True)
     tracking_thread.start()
 
-    print(f"🚀 Tracking restarted for user {user_id}, sending alerts to {recipient_emails}")
+    print(f"🚀 Tracking started for user {user_id}, checking if phone stays in one place for 3 minutes.")
 
-    return jsonify({"message": "✅ Tracking started, alerts will be sent every 3 minutes"}), 200
+    return jsonify({"message": "✅ Tracking started. If phone stays in one place for 3 minutes, an alert will be sent."}), 200
+
+
 
 
 
 def send_repeated_alerts(user_id, recipient_emails):
-    """Continuously sends email alerts every 3 minutes until tracking is stopped."""
-    with app.app_context():  # ✅ FIX: Ensure Flask app context
-        while tracking_users.get(user_id, False):  # ✅ Check if tracking is active
-            subject = "🚨 Urgent: Your Phone is Still Left Behind!"
-            body = "Your phone has not been retrieved yet. Please check its last known location!"
+    """Sends email alerts only if the phone remains in the same location for 3 minutes."""
+    with app.app_context():
+        phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
 
-            for email in recipient_emails:
-                try:
-                    msg = Message(subject, recipients=[email], body=body)
-                    mail.send(msg)  # ✅ FIXED: Now inside app context!
-                    print(f"✅ Email sent to {email}")
-                except Exception as e:
-                    print(f"❌ Failed to send email to {email}: {str(e)}")
+        if not phone_status:
+            print(f"⚠️ No phone status found for user {user_id}.")
+            return
 
-            time.sleep(30)  # 🔄 Send email every 3 minutes
+        # ✅ Initialize last known location
+        last_lat, last_long = phone_status.last_latitude, phone_status.last_longitude
+        last_update_time = datetime.utcnow()
 
-        print(f"🛑 Tracking stopped for user {user_id}")
+        while tracking_users.get(user_id, {}).get("active", False):  # ✅ Corrected indentation
+            time.sleep(180)  # ✅ Wait for 3 minutes
+            
+            # ✅ Fetch latest phone status from database
+            phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
+            if not phone_status:
+                print(f"⚠️ No phone status found for user {user_id}. Stopping tracking.")
+                break
+
+            # ✅ Retrieve current latitude and longitude
+            current_lat, current_long = phone_status.last_latitude, phone_status.last_longitude
+
+            # ✅ If phone hasn't moved, check if it's been 3 minutes
+            if (current_lat, current_long) == (last_lat, last_long):
+                time_elapsed = (datetime.utcnow() - last_update_time).total_seconds()
+
+                if time_elapsed >= 180:  # ✅ If 3 minutes have passed
+                    print(f"📌 Phone has stayed in the same location for 3 minutes. Sending alert...")
+                    send_email_alert(user_id)  # ✅ Send email alert
+            else:
+                # ✅ If phone moved, reset timer
+                last_lat, last_long = current_lat, current_long
+                last_update_time = datetime.utcnow()
 
 
 
 
 
 
-@app.route("/stop-tracking", methods=["POST"])
+
+
+
+
+
+@app.route("/stop-tracking", methods=["GET", "POST"])
 def stop_tracking():
-    """Stops the repeated email alerts."""
-    data = request.json
-    user_id = data.get("user_id")
+    """Stops the repeated email alerts when user clicks the stop link."""
+    user_id = request.args.get("user_id") or request.json.get("user_id")
 
     if not user_id or user_id not in tracking_users:
         return jsonify({"error": "Tracking was not active for this user"}), 400
 
-    tracking_users[user_id] = False
+    tracking_users[user_id]["active"] = False
     print(f"🛑 Stopped tracking for user {user_id}")
 
-    return jsonify({"message": "Tracking stopped successfully"}), 200
+    return jsonify({"message": "✅ Tracking stopped successfully"}), 200
+
+
 
 
 
