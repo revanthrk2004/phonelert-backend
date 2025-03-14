@@ -13,6 +13,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from database.db_manager import create_app, db
 from routes.auth_route import auth
+from database.models import PhoneStatus, UserLocation  # ✅ Import UserLocation
 
 from flask_sqlalchemy import SQLAlchemy  # Database to store locations
 from geopy.distance import geodesic  # To calculate distance between two coordinates
