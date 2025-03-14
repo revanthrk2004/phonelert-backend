@@ -71,6 +71,8 @@ def handle_options_request():
         return response, 200
 
 
+
+
 @app.route("/check-location", methods=["POST"])
 def check_location():
     """Receives live location data and sends an alert with the latest coordinates."""
@@ -114,40 +116,84 @@ def check_location():
     return jsonify({"message": f"✅ Live location emails sent to: {', '.join(recipient_emails)}"}), 200
 
 
-def send_email_alert(user_id, live_lat=None, live_long=None):
-    """Sends an alert email with either live location or saved location."""
 
+def should_send_alert(user_id, live_lat, live_long):
+    """
+    AI Decision: Should an alert be sent?
+    - If phone is in a **safe location**, don't send an alert.
+    - If phone hasn't moved for **3 minutes**, send an alert.
+    """
+    safe_location = UserLocation.query.filter_by(user_id=user_id, location_type="safe").first()
+    unsafe_location = UserLocation.query.filter_by(user_id=user_id, location_type="unsafe").first()
+
+    # ✅ If user has saved a safe location, check distance
+    if safe_location:
+        distance_to_safe = geodesic((live_lat, live_long), (safe_location.latitude, safe_location.longitude)).meters
+        if distance_to_safe < 50:  # ✅ If phone is within 50 meters of safe location, no alert needed
+            print(f"✅ AI Decision: Phone is in SAFE location '{safe_location.name}'. No alert needed.")
+            return False
+
+    # ✅ If user has an unsafe location, check distance
+    if unsafe_location:
+        distance_to_unsafe = geodesic((live_lat, live_long), (unsafe_location.latitude, unsafe_location.longitude)).meters
+        if distance_to_unsafe < 50:  # ✅ If phone is within unsafe location, send alert
+            print(f"⚠️ AI Decision: Phone is in UNSAFE location '{unsafe_location.name}'. Sending alert!")
+            return True
+
+    # ✅ If location hasn't changed for 3 minutes, send alert
+    last_alert = AlertHistory.query.filter_by(user_id=user_id).order_by(AlertHistory.timestamp.desc()).first()
+    if last_alert:
+        last_location = (last_alert.latitude, last_alert.longitude)
+        current_location = (live_lat, live_long)
+        if last_location == current_location:
+            print(f"📌 AI Decision: Phone hasn't moved in 3 minutes. Sending alert!")
+            return True
+
+    # Default: Send alert if no safe location & hasn't moved
+    print(f"🚨 AI Decision: No safe location found. Sending alert by default.")
+    return True
+
+
+def send_email_alert(user_id, live_lat=None, live_long=None):
+    """Sends an alert email only if AI determines it is necessary."""
     with app.app_context():
-        # 1️⃣ Always try LIVE LOCATION first
+        # 1️⃣ Try to use the live location from React Native
         if live_lat is None or live_long is None:
             phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
             if phone_status:
                 live_lat, live_long = phone_status.last_latitude, phone_status.last_longitude
 
-        # 2️⃣ If no live location, DEFAULT to Lewisham
-        if live_lat is None or live_long is None:
-            live_lat, live_long = 51.4613, -0.0081  # Lewisham, London
-            print("⚠️ No live location. Using default Lewisham, London.")
+        # 2️⃣ If no live location, try using a saved location
+        saved_location = UserLocation.query.filter_by(user_id=user_id).first()
+        if (live_lat is None or live_long is None) and saved_location:
+            live_lat, live_long = saved_location.latitude, saved_location.longitude
+            print(f"📍 Using saved location '{saved_location.name}' instead.")
 
-        # 3️⃣ Ensure AI Logs This Alert
+        # 3️⃣ If STILL no location, skip alert
+        if live_lat is None or live_long is None:
+            print(f"⚠️ No location data available for user {user_id}. Skipping alert.")
+            return
+
+        # ✅ AI Decision: Check if alert should be sent
+        ai_decision = should_send_alert(user_id, live_lat, live_long)
+
+        # ✅ Save decision to alert history
         new_alert = AlertHistory(
             user_id=user_id,
             latitude=live_lat,
             longitude=live_long,
-            location_type="unsafe",  # Example: We assume AI marks it unsafe
-            ai_decision="sent",  # AI decided to send alert
-            timestamp=datetime.utcnow()
+            location_type="live",
+            ai_decision=ai_decision,
         )
+        db.session.add(new_alert)
+        db.session.commit()
 
-        try:
-            db.session.add(new_alert)
-            db.session.commit()
-            print(f"✅ AI Alert Logged: {live_lat}, {live_long}")
-        except Exception as e:
-            db.session.rollback()
-            print(f"❌ AI Logging Failed: {e}")
+        # ❌ If AI says no alert needed, return
+        if not ai_decision:
+            print(f"🛑 AI decided NO alert needed for user {user_id}.")
+            return
 
-        # 4️⃣ Send Email
+        # ✅ If AI says alert is needed, send email
         recipient_emails = tracking_users.get(user_id, {}).get("emails", [])
         google_maps_link = f"https://www.google.com/maps?q={live_lat},{live_long}"
         stop_tracking_link = f"https://phonelert-backend.onrender.com/stop-tracking?user_id={user_id}"
@@ -155,8 +201,10 @@ def send_email_alert(user_id, live_lat=None, live_long=None):
         subject = "🚨 Urgent: Your Phone is Still Left Behind!"
         body = f"""
         Your phone has not been retrieved yet. Please check its last known location!
-
+        
         📍 **Last Known Location:** {google_maps_link}
+
+        🏠 **Saved Location (if available):** {saved_location.name if saved_location else "Not Found"}
 
         🛑 **Stop Tracking:** Click here to stop alerts → [Stop Tracking]({stop_tracking_link})
         """
@@ -168,7 +216,6 @@ def send_email_alert(user_id, live_lat=None, live_long=None):
                 print(f"✅ Email sent to {email}")
             except Exception as e:
                 print(f"❌ Failed to send email to {email}: {str(e)}")
-
 def send_repeated_alerts(user_id, recipient_emails):
     """Sends email alerts only if the phone remains in the same location for 3 minutes."""
     with app.app_context():
