@@ -20,7 +20,8 @@ from datetime import datetime  # For timestamping last phone activity
 from database.models import PhoneStatus  # ✅ Import the model
 from flask_migrate import Migrate
 from sqlalchemy import inspect
-
+from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy.exc import OperationalError
 
 
 app = create_app()
@@ -39,6 +40,9 @@ mail = Mail(app)  # ✅ Initialize Flask-Mail
 
 # ✅ Enable CORS for all requests
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+
+tracking_users = {}  # ✅ Store tracking status per user
+
 
 @app.route('/auth/login', methods=['POST'])
 def login():
@@ -65,34 +69,6 @@ def handle_options_request():
         return response, 200
 
 
-
-@app.route("/bluetooth/disconnect", methods=["POST"])
-def bluetooth_disconnect():
-    """Triggered when smartwatch disconnects from phone."""
-    data = request.json
-    user_id = data.get("user_id")
-
-    if not user_id:
-        return jsonify({"error": "User ID is required"}), 400
-
-    print(f"🔄 Received Bluetooth disconnect alert for user {user_id}")
-
-    # Fetch phone status from the database
-    phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
-
-    if phone_status:
-        # ✅ Ensure `last_location` is not None
-        location_name = phone_status.last_location if phone_status.last_location else "Unknown Location"
-
-        print(f"🚨 User {user_id} may have left their phone at {location_name}!")
-        send_alert(user_id, location_name)
-
-        return jsonify({"message": "Disconnection alert received & notification sent"}), 200
-
-    print(f"⚠️ No phone status found for user {user_id}")
-    return jsonify({"message": "Disconnection alert received, but no stored location"}), 200
-
-tracking_users = {}  # ✅ Store tracking status per user
 
 def send_email_alert(user_id):
     """Sends an alert email with a stop-tracking link and Google Maps location."""
@@ -128,25 +104,6 @@ def send_email_alert(user_id):
 
 
 
-@app.route("/send-alert", methods=["POST"])
-def send_alert():
-    data = request.json
-    location_name = data.get("locationName")
-    emails = data.get("emails", [])
-
-    if not emails:
-        return jsonify({"error": "No emails provided"}), 400
-    subject="📍 Phone Left Behind Alert!",
-    body=f"Hey! It looks like you left your phone at {location_name}. Please check!"
-        
-    for email in emails:
-        try:
-            msg = Message(subject, recipients=[email], body=body)
-            mail.send(msg)
-        except Exception as e:
-            return jsonify({"error": str(e)}), 500
-
-    return jsonify({"success": True, "message": "Emails sent successfully!"})
 
 
 @app.route("/start-tracking", methods=["POST"])
@@ -175,42 +132,46 @@ def start_tracking():
 
 
 
-def send_repeated_alerts(user_id, recipient_emails):
-    """Sends email alerts only if the phone remains in the same location for 3 minutes."""
-    with app.app_context():
+def monitor_phone_location(user_id):
+    """Sends an email if the phone remains in the same location for 3 minutes."""
+    with app.app_context():  # ✅ Ensure Flask context
         phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
 
         if not phone_status:
             print(f"⚠️ No phone status found for user {user_id}.")
             return
 
-        # ✅ Initialize last known location
         last_lat, last_long = phone_status.last_latitude, phone_status.last_longitude
-        last_update_time = datetime.utcnow()
+        last_update_time = datetime.now(timezone.utc)
 
-        while tracking_users.get(user_id, {}).get("active", False):  # ✅ Corrected indentation
+        while tracking_users.get(user_id, {}).get("active", False):
             time.sleep(180)  # ✅ Wait for 3 minutes
-            
-            # ✅ Fetch latest phone status from database
-            phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
-            if not phone_status:
-                print(f"⚠️ No phone status found for user {user_id}. Stopping tracking.")
-                break
 
-            # ✅ Retrieve current latitude and longitude
-            current_lat, current_long = phone_status.last_latitude, phone_status.last_longitude
+            try:
+                with db.session.begin():
+                    phone_status = db.session.query(PhoneStatus).filter_by(user_id=user_id).first()
 
-            # ✅ If phone hasn't moved, check if it's been 3 minutes
-            if (current_lat, current_long) == (last_lat, last_long):
-                time_elapsed = (datetime.utcnow() - last_update_time).total_seconds()
+                if not phone_status:
+                    print(f"⚠️ No phone status found for user {user_id}. Stopping tracking.")
+                    break
 
-                if time_elapsed >= 180:  # ✅ If 3 minutes have passed
+                current_lat, current_long = phone_status.last_latitude, phone_status.last_longitude
+                time_elapsed = (datetime.now(timezone.utc) - last_update_time).total_seconds()
+
+                if (current_lat, current_long) == (last_lat, last_long) and time_elapsed >= 180:
                     print(f"📌 Phone has stayed in the same location for 3 minutes. Sending alert...")
-                    send_email_alert(user_id)  # ✅ Send email alert
-            else:
-                # ✅ If phone moved, reset timer
+                    send_email_alert(user_id)
+
                 last_lat, last_long = current_lat, current_long
-                last_update_time = datetime.utcnow()
+                last_update_time = datetime.now(timezone.utc)
+
+            except OperationalError:
+                print("🔄 Reconnecting to the database...")
+                db.session.rollback()
+                db.session.close()
+                db.session = db.create_scoped_session()
+
+        db.session.remove()  # ✅ Close session at the end
 
 
 
