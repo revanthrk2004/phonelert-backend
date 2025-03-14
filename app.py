@@ -155,7 +155,7 @@ def send_repeated_alerts(user_id, recipient_emails):
                 except Exception as e:
                     print(f"❌ Failed to send email to {email}: {str(e)}")
 
-            time.sleep(180)  # 🔄 Send email every 3 minutes
+            time.sleep(30)  # 🔄 Send email every 3 minutes
 
         print(f"🛑 Tracking stopped for user {user_id}")
 
