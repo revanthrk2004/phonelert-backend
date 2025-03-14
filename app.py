@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import time
 import threading  # To run background tasks for AI detection
 import requests  # To send notification to the user's other devices
 # Force Python to recognize 'backend/' as a package
@@ -112,32 +113,60 @@ def send_alert():
 
     return jsonify({"success": True, "message": "Emails sent successfully!"})
 
+@app.route("/start-tracking", methods=["POST"])
+def start_tracking():
+    """Activates live tracking for a user."""
+    data = request.json
+    user_id = data.get("user_id")
+    recipient_emails = data.get("emails", [])
 
-def ai_background_task():
-    """Background AI Task to Detect Forgotten Phones"""
-    with app.app_context():  # ✅ Use app instead of current_app
-        while True:
-            try:
-                inspector = inspect(db.engine)
-                if "phone_status" in inspector.get_table_names():
-                    users = PhoneStatus.query.all()
-                    for user in users:
-                        last_location = (user.last_known_latitude, user.last_known_longitude)
-                        registered_location = (user.registered_latitude, user.registered_longitude)
+    if not user_id or not recipient_emails:
+        return jsonify({"error": "User ID and emails are required"}), 400
 
-                        distance = geodesic(last_location, registered_location).meters
+    if user_id in tracking_users:
+        return jsonify({"message": "Tracking is already active for this user"}), 200
 
-                        if distance < 50 and not user.is_moving and (time.time() - user.last_motion_time.timestamp()) > 300:
-                            print(f"User {user.user_id} might have left their phone!")
-                            send_alert(user.user_id, user.registered_location)
+    print(f"🚀 Starting tracking for user {user_id}...")
 
-                else:
-                    print("PhoneStatus table does not exist yet.")
+    def send_repeated_alerts():
+        while tracking_users.get(user_id, False):
+            subject = "🚨 Urgent: Your Phone is Still Left Behind!"
+            body = "Your phone has not been retrieved yet. Please check its last known location!"
 
-            except Exception as e:
-                print(f"Error in AI monitoring task: {e}")
+            for email in recipient_emails:
+                try:
+                    msg = Message(subject, recipients=[email], body=body)
+                    mail.send(msg)
+                    print(f"✅ Email sent to {email}")
+                except Exception as e:
+                    print(f"❌ Failed to send email to {email}: {str(e)}")
 
-            time.sleep(60)  # Run check every 60 seconds
+            time.sleep(180)  # Send email every 3 minutes
+
+    # Start tracking in a separate thread
+    tracking_users[user_id] = True
+    tracking_thread = threading.Thread(target=send_repeated_alerts)
+    tracking_thread.start()
+
+    return jsonify({"message": "Tracking started, alerts will be sent every 3 minutes"}), 200
+
+
+
+@app.route("/stop-tracking", methods=["POST"])
+def stop_tracking():
+    """Stops the repeated email alerts."""
+    data = request.json
+    user_id = data.get("user_id")
+
+    if not user_id or user_id not in tracking_users:
+        return jsonify({"error": "Tracking was not active for this user"}), 400
+
+    tracking_users[user_id] = False
+    print(f"🛑 Stopped tracking for user {user_id}")
+
+    return jsonify({"message": "Tracking stopped successfully"}), 200
+
+
 
 @app.route("/debug/routes", methods=["GET"])
 def list_routes():
