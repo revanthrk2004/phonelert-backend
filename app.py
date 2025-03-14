@@ -6,6 +6,7 @@ import threading  # To run background tasks for AI detection
 import requests  # To send notification to the user's other devices
 # Force Python to recognize 'backend/' as a package
 from flask_mail import Mail, Message  # ✅ Add Flask-Mail
+from database.models import AlertHistory  # ✅ Add this line
 
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
