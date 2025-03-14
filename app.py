@@ -92,7 +92,7 @@ def check_location():
     return jsonify({"message": "✅ Email alert sent successfully."}), 200
 
 def send_email_alert(user_id):
-    """Sends an alert email with a stop-tracking link and Google Maps location."""
+    """Sends an alert email with the last live location and stop-tracking link."""
     with app.app_context():
         phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
 
@@ -102,6 +102,15 @@ def send_email_alert(user_id):
 
         recipient_emails = tracking_users.get(user_id, {}).get("emails", [])
 
+        # ✅ Fetch the latest location from the database
+        phone_status = db.session.query(PhoneStatus).filter_by(user_id=user_id).first()
+
+        # ✅ Ensure location is not None
+        if not phone_status or phone_status.last_latitude is None or phone_status.last_longitude is None:
+            print(f"❌ ERROR: No live location data found for user {user_id}")
+            return
+
+        # ✅ Format the Google Maps link with the latest latitude & longitude
         last_lat, last_long = phone_status.last_latitude, phone_status.last_longitude
         google_maps_link = f"https://www.google.com/maps?q={last_lat},{last_long}"
         stop_tracking_link = f"https://phonelert-backend.onrender.com/stop-tracking?user_id={user_id}"
@@ -110,7 +119,7 @@ def send_email_alert(user_id):
         body = f"""
         Your phone has not been retrieved yet. Please check its last known location!
         
-        📍 **Last Known Location:** {google_maps_link}
+        📍 **Last Live Location:** {google_maps_link}
 
         🛑 **Stop Tracking:** Click here to stop alerts → [Stop Tracking]({stop_tracking_link})
         """
@@ -119,9 +128,10 @@ def send_email_alert(user_id):
             try:
                 msg = Message(subject, recipients=[email], body=body)
                 mail.send(msg)
-                print(f"✅ Email sent to {email}")
+                print(f"✅ Email sent to {email} with last live location: {google_maps_link}")
             except Exception as e:
                 print(f"❌ Failed to send email to {email}: {str(e)}")
+
 
 
 def send_repeated_alerts(user_id, recipient_emails):
