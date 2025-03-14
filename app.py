@@ -112,10 +112,11 @@ def send_alert():
             return jsonify({"error": str(e)}), 500
 
     return jsonify({"success": True, "message": "Emails sent successfully!"})
+tracking_users = {}  # ✅ Store tracking status per user
 
 @app.route("/start-tracking", methods=["POST"])
 def start_tracking():
-    """Activates live tracking for a user."""
+    """Activates live tracking for a user and keeps sending alerts every 3 minutes."""
     data = request.json
     user_id = data.get("user_id")
     recipient_emails = data.get("emails", [])
@@ -123,13 +124,17 @@ def start_tracking():
     if not user_id or not recipient_emails:
         return jsonify({"error": "User ID and emails are required"}), 400
 
-    if user_id in tracking_users:
+    if not isinstance(recipient_emails, list):
+        recipient_emails = [recipient_emails]  # ✅ Ensure emails are a list
+
+    if user_id in tracking_users and tracking_users[user_id]:  # ✅ Prevent duplicate tracking
         return jsonify({"message": "Tracking is already active for this user"}), 200
 
-    print(f"🚀 Starting tracking for user {user_id}...")
+    tracking_users[user_id] = True  # ✅ Mark tracking as active
 
     def send_repeated_alerts():
-        while tracking_users.get(user_id, False):
+        """Continuously sends email alerts every 3 minutes until tracking is stopped."""
+        while tracking_users.get(user_id, False):  # ✅ Check if tracking is active
             subject = "🚨 Urgent: Your Phone is Still Left Behind!"
             body = "Your phone has not been retrieved yet. Please check its last known location!"
 
@@ -141,14 +146,16 @@ def start_tracking():
                 except Exception as e:
                     print(f"❌ Failed to send email to {email}: {str(e)}")
 
-            time.sleep(180)  # Send email every 3 minutes
+            time.sleep(180)  # 🔄 Send email every 3 minutes
 
-    # Start tracking in a separate thread
-    tracking_users[user_id] = True
-    tracking_thread = threading.Thread(target=send_repeated_alerts)
+    # ✅ Start email alerts in a separate thread
+    tracking_thread = threading.Thread(target=send_repeated_alerts, daemon=True)
     tracking_thread.start()
 
-    return jsonify({"message": "Tracking started, alerts will be sent every 3 minutes"}), 200
+    print(f"🚀 Tracking started for user {user_id}, sending alerts to {recipient_emails}")
+
+    return jsonify({"message": "✅ Tracking started, alerts will be sent every 3 minutes"}), 200
+
 
 
 
