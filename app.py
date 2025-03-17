@@ -77,20 +77,19 @@ def handle_options_request():
 def check_location():
     """Receives live location data and sends an alert with the latest coordinates."""
     data = request.json
-    location_name = data.get("location_name")  # Match database field
-
+    user_id = data.get("user_id")
     latitude = data.get("latitude")  # ✅ Get real-time latitude
     longitude = data.get("longitude")  # ✅ Get real-time longitude
     recipient_emails = data.get("emails", [])  
 
-    if not location_name or latitude is None or longitude is None or not recipient_emails:
+    if not user_id or latitude is None or longitude is None or not recipient_emails:
         return jsonify({"error": "Missing required data"}), 400
 
     print(f"📍 Live location received: {latitude}, {longitude}")
 
     # ✅ Build Google Maps link using the real-time coordinates
     google_maps_link = f"https://www.google.com/maps?q={latitude},{longitude}"
-    stop_tracking_link = f"https://phonelert-backend.onrender.com/stop-tracking?location_name={location_name}"
+    stop_tracking_link = f"https://phonelert-backend.onrender.com/stop-tracking?user_id={user_id}"
 
     subject = f"🚨 Urgent: Your Phone's Live Location"
     body = f"""
@@ -118,47 +117,80 @@ def check_location():
 
 
 
-def should_send_alert(locationName, lat, long):
-    """Decides whether an alert should be sent based on user-defined location safety."""
+def should_send_alert(user_id, lat, long):
+    """AI logic to determine if an alert should be sent."""
+
+    # ✅ 1️⃣ Check if the location is unsafe
+    unsafe_areas = [
+        {"name": "Lewisham", "lat": 51.4613, "long": -0.0081},
+        {"name": "Central London", "lat": 51.5074, "long": -0.1278},
+        {"name": "University of East London", "lat": 51.5081, "long": 0.0647},
+    ]
+
+    for area in unsafe_areas:
+        distance = geodesic((lat, long), (area["lat"], area["long"])).meters
+        if distance < 500:  # ✅ If within 500m, it's unsafe
+            print(f"🚨 AI Alert: User is in UNSAFE location → {area['name']}")
+            return True
+
+    # ✅ 2️⃣ Check if the user has been stationary for 3+ minutes
+    last_alert = AlertHistory.query.filter_by(user_id=user_id).order_by(AlertHistory.timestamp.desc()).first()
     
-    # ✅ Fetch location details from the database (set by user in React Native app)
-    saved_location = UserLocation.query.filter_by(name=location_name).first()
+    if last_alert:
+        time_elapsed = (datetime.utcnow() - last_alert.timestamp).total_seconds()
+        if last_alert.latitude == lat and last_alert.longitude == long and time_elapsed >= 180:
+            print(f"⏳ AI Alert: User has been STATIONARY for 3+ minutes.")
+            return True  # ✅ Trigger alert if stationary
 
-    if saved_location:
-        if saved_location.location_type == "unsafe":
-            print(f"🚨 AI Alert: User is in a manually marked UNSAFE location → {location_name}")
-            return True  # ✅ Send alert if user marked it unsafe
-        else:
-            print(f"✅ AI Decision: User is in a manually marked SAFE location → {location_name}")
-            return False  # ❌ Do NOT send an alert if user marked it safe
-
-    # ✅ Default case: If the user has NOT marked the location, AI checks inactivity
-    print(f"⚠️ AI Decision: No manual marking for {location_name}, checking inactivity...")
+    print("✅ AI Decision: No alert needed.")
     return False
 
 
 
-
-def send_email_alert(locationName, live_lat=None, live_long=None):
+def send_email_alert(user_id, live_lat=None, live_long=None):
     """Sends an alert email only if AI determines it is necessary."""
     with app.app_context():
-        # ✅ Fetch location safety status set by user
-        saved_location = UserLocation.query.filter_by(name=location_name).first()
-        if not saved_location:
-            print(f"⚠️ No saved location found for {location_name}. Skipping alert.")
+        # ✅ 1️⃣ Try to use the live location from React Native
+        if live_lat is None or live_long is None:
+            phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
+            if phone_status:
+                live_lat, live_long = phone_status.last_latitude, phone_status.last_longitude
+
+        # ✅ 2️⃣ If no live location, try using a saved location
+        saved_location = UserLocation.query.filter_by(user_id=user_id).first()
+        if (live_lat is None or live_long is None) and saved_location:
+            live_lat, live_long = saved_location.latitude, saved_location.longitude
+            print(f"📍 Using saved location '{saved_location.name}' instead.")
+
+        # ✅ 3️⃣ If STILL no location, skip alert
+        if live_lat is None or live_long is None:
+            print(f"⚠️ No location data available for user {user_id}. Skipping alert.")
             return
 
-        # ✅ AI Decision: Check if alert should be sent
-        ai_decision = should_send_alert(location_name, live_lat, live_long)
+        # ✅ 4️⃣ AI Decision: Check if alert should be sent
+        ai_decision = should_send_alert(user_id, live_lat, live_long)
+
+        # ✅ 5️⃣ Save decision to alert history
+        new_alert = AlertHistory(
+            user_id=user_id,
+            latitude=live_lat,
+            longitude=live_long,
+            location_type="live",
+            ai_decision="sent" if ai_decision else "skipped",
+            timestamp=datetime.utcnow(),
+        )
+        db.session.add(new_alert)
+        db.session.commit()
 
         # ❌ If AI says no alert needed, return
         if not ai_decision:
-            print(f"🛑 AI decided NO alert needed for {location_name}.")
+            print(f"🛑 AI decided NO alert needed for user {user_id}.")
             return
+
         # ✅ 6️⃣ If AI says alert is needed, send email
         recipient_emails = tracking_users.get(user_id, {}).get("emails", [])
         google_maps_link = f"https://www.google.com/maps?q={live_lat},{live_long}"
-        stop_tracking_link = f"https://phonelert-backend.onrender.com/stop-tracking?location_name={location_name}"
+        stop_tracking_link = f"https://phonelert-backend.onrender.com/stop-tracking?user_id={user_id}"
 
         subject = "🚨 Urgent: Your Phone is Still Left Behind!"
         body = f"""
@@ -166,7 +198,7 @@ def send_email_alert(locationName, live_lat=None, live_long=None):
         
         📍 **Last Known Location:** {google_maps_link}
 
-        🏠 **Saved Location (if available):** {location_name}
+        🏠 **Saved Location (if available):** {saved_location.name if saved_location else "Not Found"}
 
         🛑 **Stop Tracking:** Click here to stop alerts → [Stop Tracking]({stop_tracking_link})
         """
@@ -179,13 +211,13 @@ def send_email_alert(locationName, live_lat=None, live_long=None):
             except Exception as e:
                 print(f"❌ Failed to send email to {email}: {str(e)}")
 
-def send_repeated_alerts(location_name, recipient_emails):
+def send_repeated_alerts(user_id, recipient_emails):
     """Sends email alerts only if the phone remains in the same location for 3 minutes."""
     with app.app_context():
-        phone_status = PhoneStatus.query.filter_by(location_name=location_name).first()
+        phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
 
         if not phone_status:
-            print(f"⚠️ No phone status found for location {location_name}.")
+            print(f"⚠️ No phone status found for user {user_id}.")
             return
 
         last_lat, last_long = phone_status.last_latitude, phone_status.last_longitude
@@ -194,9 +226,9 @@ def send_repeated_alerts(location_name, recipient_emails):
         while tracking_users.get(user_id, {}).get("active", False):
             time.sleep(180)  # ✅ Wait for 3 minutes
 
-            phone_status = PhoneStatus.query.filter_by(location_name=location_name).first()
+            phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
             if not phone_status:
-                print(f"⚠️ No phone status found for location {location_name}. Stopping tracking.")
+                print(f"⚠️ No phone status found for user {user_id}. Stopping tracking.")
                 break
 
             current_lat, current_long = phone_status.last_latitude, phone_status.last_longitude
@@ -204,7 +236,7 @@ def send_repeated_alerts(location_name, recipient_emails):
             # ✅ Check if phone stayed in the same spot for 3 minutes
             if (current_lat, current_long) == (last_lat, last_long):
                 print(f"📌 Phone has stayed in the same location for 3 minutes. Sending alert...")
-                send_email_alert(location_name)  # ✅ Send email alert
+                send_email_alert(user_id)  # ✅ Send email alert
 
             # ✅ Update last known position and timestamp
             last_lat, last_long = current_lat, current_long
@@ -219,28 +251,25 @@ def start_tracking():
     print(f"📥 Received start-tracking request: {data}")
     sys.stdout.flush()  # ✅ Force log to appear in Render
 
-    location_name = data.get("location_name")
-    if not location_name:
-        return jsonify({"error": "Location name is required"}), 400  # ✅ Indented properly
-
-    email = data.get("email")  # ✅ Use email as identifier
+    user_id = data.get("user_id")
     recipient_emails = data.get("emails", [])
 
-    if not location_name or not recipient_emails:
-        print("❌ Location or emails in request!")
+    if not user_id or not recipient_emails:
+        print("❌ Missing user_id or emails in request!")
         sys.stdout.flush()  # ✅ Force log to appear
-        return jsonify({"error": "Location name and emails are required"}), 400
+        return jsonify({"error": "User ID and emails are required"}), 400
 
-    if location_name in tracking_users and tracking_users[location_name]["active"]:
-        print(f"⚠️ Tracking is already active for location {location_name}")
+    if user_id in tracking_users and tracking_users[user_id]["active"]:
+        print(f"⚠️ Tracking is already active for user {user_id}")
         sys.stdout.flush()  # ✅ Force log to appear
-        return jsonify({"message": "Tracking is already active for this location"}), 200
+        return jsonify({"message": "Tracking is already active for this user"}), 200
 
-    tracking_users[location_name] = {"active": True, "emails": recipient_emails}
+    tracking_users[user_id] = {"active": True, "emails": recipient_emails}
 
-    tracking_thread = threading.Thread(target=send_repeated_alerts, args=(location_name, recipient_emails), daemon=True)
+    tracking_thread = threading.Thread(target=send_repeated_alerts, args=(user_id, recipient_emails), daemon=True)
     tracking_thread.start()
-    print(f"🚀 Started tracking for location: {location_name}")
+
+    print(f"🚀 Started tracking for user {user_id}")
     sys.stdout.flush()  # ✅ Force log to appear
     return jsonify({"message": "✅ Tracking started. If phone stays in one place for 3 minutes, an alert will be sent."}), 200
 
@@ -250,27 +279,27 @@ def start_tracking():
 
 
 
-def monitor_phone_location(location_name):
+def monitor_phone_location(user_id):
     """Sends an email if the phone remains in the same location for 3 minutes."""
     with app.app_context():  # ✅ Ensure Flask context
-        phone_status = PhoneStatus.query.filter_by(location_name=location_name).first()
+        phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
 
         if not phone_status:
-            print(f"⚠️ No phone status found for Location {location_name}.")
+            print(f"⚠️ No phone status found for user {user_id}.")
             return
 
         last_lat, last_long = phone_status.last_latitude, phone_status.last_longitude
         last_update_time = datetime.now(timezone.utc)
 
-        while tracking_users.get(location_name, {}).get("active", False):
+        while tracking_users.get(user_id, {}).get("active", False):
             time.sleep(180)  # ✅ Wait for 3 minutes
 
             try:
                 with db.session.begin():
-                    phone_status = db.session.query(PhoneStatus).filter_by(location_name=location_name).first()
+                    phone_status = db.session.query(PhoneStatus).filter_by(user_id=user_id).first()
 
                 if not phone_status:
-                    print(f"⚠️ No phone status found for Location {location_name}. Stopping tracking.")
+                    print(f"⚠️ No phone status found for user {user_id}. Stopping tracking.")
                     break
 
                 current_lat, current_long = phone_status.last_latitude, phone_status.last_longitude
@@ -278,7 +307,7 @@ def monitor_phone_location(location_name):
 
                 if (current_lat, current_long) == (last_lat, last_long) and time_elapsed >= 180:
                     print(f"📌 Phone has stayed in the same location for 3 minutes. Sending alert...")
-                    send_email_alert(location_name)
+                    send_email_alert(user_id)
 
                 last_lat, last_long = current_lat, current_long
                 last_update_time = datetime.now(timezone.utc)
@@ -294,7 +323,7 @@ def monitor_phone_location(location_name):
 
 
 
-def ai_decide_alert(location_name, latitude, longitude):
+def ai_decide_alert(user_id, latitude, longitude):
     """AI decides whether an alert should be sent based on location history."""
     with app.app_context():
         # ✅ Check if this location is already classified
@@ -310,13 +339,13 @@ def ai_decide_alert(location_name, latitude, longitude):
             print(f"⚠️ AI Decision: New location detected, marking as UNSAFE!")
 
         # ✅ Check if the phone has stayed in the same place for 3 minutes
-        phone_status = PhoneStatus.query.filter_by(location_name=location_name).first()
+        phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
         if phone_status and (phone_status.last_latitude, phone_status.last_longitude) == (latitude, longitude):
             print("📌 Phone has been in the same location for 3 minutes.")
 
             # ✅ Log the AI decision in `alert_history`
             new_alert = AlertHistory(
-                location_name=location_name,
+                user_id=user_id,
                 latitude=latitude,
                 longitude=longitude,
                 location_type=location_type,
@@ -338,27 +367,19 @@ def ai_decide_alert(location_name, latitude, longitude):
 @app.route("/stop-tracking", methods=["GET", "POST"])
 def stop_tracking():
     """Stops repeated email alerts when user clicks stop tracking link."""
-    
-    # ✅ Ensure request.json is accessed safely (Avoids NoneType error)
-    data = request.json if request.is_json else {}
-
-    # ✅ Fetch location name safely from query params or JSON body
-    location_name = request.args.get("location_name") or data.get("location_name")
-    
-    print(f"📥 Received stop-tracking request for Location: {location_name}")
+    user_id = request.args.get("user_id") or request.json.get("user_id")
+    print(f"📥 Received stop-tracking request for user {user_id}")
     sys.stdout.flush()  # ✅ Force log to appear
 
-    # ✅ Ensure correct variable usage (Fixed inconsistent variable name)
-    if not location_name or location_name not in tracking_users:
+    if not user_id or user_id not in tracking_users:
         print("⚠️ Tracking was not active, ignoring stop request.")
         sys.stdout.flush()  # ✅ Force log to appear
-        return jsonify({"error": "Tracking was not active for this location"}), 400
+        return jsonify({"error": "Tracking was not active for this user"}), 400
 
-    # ✅ Stop tracking and remove from the dictionary
-    tracking_users[location_name]["active"] = False
-    del tracking_users[location_name]
+    tracking_users[user_id]["active"] = False
+    del tracking_users[user_id]
 
-    print(f"🛑 Stopped tracking for location: {location_name}")
+    print(f"🛑 Stopped tracking for user {user_id}")
     sys.stdout.flush()  # ✅ Force log to appear
     return jsonify({"message": "✅ Tracking stopped successfully"}), 200
 
