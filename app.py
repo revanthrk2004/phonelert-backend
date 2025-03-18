@@ -217,10 +217,17 @@ def send_email_alert(user_id, live_lat=None, live_long=None):
 def send_repeated_alerts(user_id, recipient_emails):
     """Sends email alerts only if the phone remains in the same location for 3 minutes."""
     with app.app_context():
-        phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
+        try:
+            # ✅ Ensure user_id is an integer
+            user_id = int(user_id)
+        except (ValueError, TypeError):
+            print(f"❌ Invalid user_id received in send_repeated_alerts: {user_id}")
+            return
 
+        # ✅ Fetch phone status from database
+        phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
         if not phone_status:
-            print(f"⚠️ No phone status found for user {user_id}.")
+            print(f"⚠️ No phone status found for user {user_id}. Stopping tracking.")
             return
 
         last_lat, last_long = phone_status.last_latitude, phone_status.last_longitude
@@ -239,7 +246,9 @@ def send_repeated_alerts(user_id, recipient_emails):
             # ✅ Check if phone stayed in the same spot for 3 minutes
             if (current_lat, current_long) == (last_lat, last_long):
                 print(f"📌 Phone has stayed in the same location for 3 minutes. Sending alert...")
-                send_email_alert(user_id)  # ✅ Send email alert
+                
+                # ✅ Pass recipient emails to send_email_alert()
+                send_email_alert(user_id, recipient_emails)
 
             # ✅ Update last known position and timestamp
             last_lat, last_long = current_lat, current_long
@@ -251,20 +260,23 @@ def send_repeated_alerts(user_id, recipient_emails):
 def start_tracking():
     """Activates tracking only if the phone stays in one place for 3 minutes."""
     data = request.json
-    print(f"📥 Received start-tracking request: {data}")
     logging.info(f"📥 Received start-tracking request: {data}")
 
-    user_id = data.get("user_id")
+    # ✅ Ensure user_id is properly extracted and converted to an integer
+    try:
+        user_id = int(data.get("user_id"))  # Force conversion to integer
+    except (ValueError, TypeError):
+        logging.error("❌ Invalid or missing user_id in request!")
+        return jsonify({"error": "Invalid user ID"}), 400
+
     recipient_emails = data.get("emails", [])
 
-    if not user_id or not recipient_emails:
-        print("❌ Missing user_id or emails in request!")
-        sys.stdout.flush()  # ✅ Force log to appear
-        return jsonify({"error": "User ID and emails are required"}), 400
+    if not recipient_emails:
+        logging.error("❌ Missing recipient emails in request!")
+        return jsonify({"error": "Emails are required"}), 400
 
     if user_id in tracking_users and tracking_users[user_id]["active"]:
-        print(f"⚠️ Tracking is already active for user {user_id}")
-        sys.stdout.flush()  # ✅ Force log to appear
+        logging.warning(f"⚠️ Tracking is already active for user {user_id}")
         return jsonify({"message": "Tracking is already active for this user"}), 200
 
     tracking_users[user_id] = {"active": True, "emails": recipient_emails}
@@ -272,9 +284,7 @@ def start_tracking():
     tracking_thread = threading.Thread(target=send_repeated_alerts, args=(user_id, recipient_emails), daemon=True)
     tracking_thread.start()
 
-    print(f"🚀 Started tracking for user {user_id}")
     logging.info(f"🚀 Started tracking for user {user_id}")
-    
     return jsonify({"message": "✅ Tracking started. If phone stays in one place for 3 minutes, an alert will be sent."}), 200
 
 
