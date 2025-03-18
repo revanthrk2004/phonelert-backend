@@ -260,23 +260,36 @@ def send_repeated_alerts(user_id, recipient_emails):
 def start_tracking():
     """Activates tracking only if the phone stays in one place for 3 minutes."""
     data = request.json
-    logging.info(f"📥 Received start-tracking request: {data}")
-
-    # ✅ Ensure user_id is properly extracted and converted to an integer
-    try:
-        user_id = int(data.get("user_id"))  # Force conversion to integer
-    except (ValueError, TypeError):
-        logging.error("❌ Invalid or missing user_id in request!")
-        return jsonify({"error": "Invalid user ID"}), 400
-
     recipient_emails = data.get("emails", [])
 
-    if not recipient_emails:
-        logging.error("❌ Missing recipient emails in request!")
-        return jsonify({"error": "Emails are required"}), 400
+    print(f"📥 Received start-tracking request: {data}")  # ✅ Log full request data
+    sys.stdout.flush()
+
+    # ✅ Try to get user_id from the request
+    user_id = data.get("user_id")
+
+    # ✅ If user_id is missing, fetch it from the database using email
+    if not user_id and recipient_emails:
+        user = User.query.filter_by(email=recipient_emails[0]).first()
+        if user:
+            user_id = user.id
+            print(f"🔄 Retrieved user_id: {user_id} for email {recipient_emails[0]}")
+        else:
+            print(f"❌ No user found with email: {recipient_emails[0]}")
+            return jsonify({"error": "User not found"}), 400
+
+    # ✅ Log user_id for debugging
+    print(f"🧐 user_id received: {user_id} (Type: {type(user_id)})")
+    sys.stdout.flush()
+
+    if not user_id or not isinstance(user_id, (int, str)):
+        print("❌ Invalid or missing user_id in request!")
+        sys.stdout.flush()
+        return jsonify({"error": "Valid user_id is required"}), 400
 
     if user_id in tracking_users and tracking_users[user_id]["active"]:
-        logging.warning(f"⚠️ Tracking is already active for user {user_id}")
+        print(f"⚠️ Tracking is already active for user {user_id}")
+        sys.stdout.flush()
         return jsonify({"message": "Tracking is already active for this user"}), 200
 
     tracking_users[user_id] = {"active": True, "emails": recipient_emails}
@@ -284,9 +297,9 @@ def start_tracking():
     tracking_thread = threading.Thread(target=send_repeated_alerts, args=(user_id, recipient_emails), daemon=True)
     tracking_thread.start()
 
-    logging.info(f"🚀 Started tracking for user {user_id}")
+    print(f"🚀 Started tracking for user {user_id}")
+    sys.stdout.flush()
     return jsonify({"message": "✅ Tracking started. If phone stays in one place for 3 minutes, an alert will be sent."}), 200
-
 
 
 
