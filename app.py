@@ -1,5 +1,8 @@
 import sys
 import os
+import logging
+
+logging.basicConfig(level=logging.INFO)
 import json
 import time
 import threading  # To run background tasks for AI detection
@@ -249,7 +252,7 @@ def start_tracking():
     """Activates tracking only if the phone stays in one place for 3 minutes."""
     data = request.json
     print(f"📥 Received start-tracking request: {data}")
-    sys.stdout.flush()  # ✅ Force log to appear in Render
+    logging.info(f"📥 Received start-tracking request: {data}")
 
     user_id = data.get("user_id")
     recipient_emails = data.get("emails", [])
@@ -270,7 +273,8 @@ def start_tracking():
     tracking_thread.start()
 
     print(f"🚀 Started tracking for user {user_id}")
-    sys.stdout.flush()  # ✅ Force log to appear
+    logging.info(f"🚀 Started tracking for user {user_id}")
+    
     return jsonify({"message": "✅ Tracking started. If phone stays in one place for 3 minutes, an alert will be sent."}), 200
 
 
@@ -367,22 +371,23 @@ def ai_decide_alert(user_id, latitude, longitude):
 @app.route("/stop-tracking", methods=["GET", "POST"])
 def stop_tracking():
     """Stops repeated email alerts when user clicks stop tracking link."""
-    user_id = request.args.get("user_id") or request.json.get("user_id")
-    print(f"📥 Received stop-tracking request for user {user_id}")
-    sys.stdout.flush()  # ✅ Force log to appear
+    
+    user_id = request.args.get("user_id") or (request.json.get("user_id") if request.is_json else None)
+    logging.info(f"📥 Received stop-tracking request for user {user_id}")
 
-    if not user_id or user_id not in tracking_users:
-        print("⚠️ Tracking was not active, ignoring stop request.")
-        sys.stdout.flush()  # ✅ Force log to appear
+    if not user_id:
+        logging.error("❌ Missing user_id in request!")
+        return jsonify({"error": "User ID is required"}), 400
+
+    if user_id not in tracking_users:
+        logging.warning(f"⚠️ No active tracking found for user {user_id}")
         return jsonify({"error": "Tracking was not active for this user"}), 400
 
     tracking_users[user_id]["active"] = False
     del tracking_users[user_id]
 
-    print(f"🛑 Stopped tracking for user {user_id}")
-    sys.stdout.flush()  # ✅ Force log to appear
+    logging.info(f"🛑 Stopped tracking for user {user_id}")
     return jsonify({"message": "✅ Tracking stopped successfully"}), 200
-
 
 
 
