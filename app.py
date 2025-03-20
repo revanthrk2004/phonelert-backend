@@ -459,14 +459,17 @@ def test_ai():
     openai.api_key = os.getenv("OPENAI_API_KEY")
 
     try:
-        response = openai.ChatCompletion.create(
+        client = openai.OpenAI(api_key=openai.api_key)  # ✅ Correct method for v1.67.0
+        
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "system", "content": "Say hello!"}]
         )
-        return jsonify(response["choices"][0]["message"]["content"])
+        
+        return jsonify({"response": response.choices[0].message.content})
+    
     except Exception as e:
         return jsonify({"error": str(e)})
-
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
