@@ -453,6 +453,21 @@ def test_email():
         return jsonify({"error": f"❌ Failed to send email: {str(e)}"}), 500
 
 
+
+@app.route('/test-ai', methods=['GET'])
+def test_ai():
+    openai.api_key = os.getenv("OPENAI_API_KEY")
+
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[{"role": "system", "content": "Say hello!"}]
+        )
+        return jsonify(response["choices"][0]["message"]["content"])
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+        
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
