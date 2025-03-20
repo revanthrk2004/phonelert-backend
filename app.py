@@ -461,10 +461,11 @@ def test_ai():
     try:
         client = openai.OpenAI(api_key=openai.api_key)  # ✅ Correct method for v1.67.0
         
-        response = client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "system", "content": "Say hello!"}]
-        )
+        response = openai.ChatCompletion.create(
+    model="gpt-4o",  # ✅ You have access to this model
+    messages=[{"role": "user", "content": "Hello!"}]
+)
+
         
         return jsonify({"response": response.choices[0].message.content})
     
