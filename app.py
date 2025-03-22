@@ -28,7 +28,10 @@ from flask_migrate import Migrate
 from sqlalchemy import inspect
 from sqlalchemy.orm import scoped_session, sessionmaker
 from sqlalchemy.exc import OperationalError
+from dotenv import load_dotenv  # ✅ Load environment variables
 
+# ✅ Load .env file
+load_dotenv()
 
 app = create_app()
 migrate = Migrate(app, db)  # ✅ Enable migrations
@@ -456,22 +459,18 @@ def test_email():
 
 @app.route('/test-ai', methods=['GET'])
 def test_ai():
-    openai.api_key = os.getenv("OPENAI_API_KEY")
-
     try:
-        client = openai.OpenAI(api_key=openai.api_key)  # ✅ Correct method for v1.67.0
-        
-        response = openai.ChatCompletion.create(
-    model="gpt-4o",  # ✅ You have access to this model
-    messages=[{"role": "user", "content": "Hello!"}]
-)
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-        
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": "Hello"}]
+        )
+
         return jsonify({"response": response.choices[0].message.content})
-    
     except Exception as e:
         return jsonify({"error": str(e)})
-
+        
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
