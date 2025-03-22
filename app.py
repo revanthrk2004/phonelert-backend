@@ -29,6 +29,7 @@ from sqlalchemy import inspect
 from sqlalchemy.orm import scoped_session, sessionmaker
 from sqlalchemy.exc import OperationalError
 from dotenv import load_dotenv  # ✅ Load environment variables
+from openai import OpenAI
 
 # ✅ Load .env file
 load_dotenv()
@@ -470,7 +471,7 @@ def test_ai():
         return jsonify({"response": response.choices[0].message.content})
     except Exception as e:
         return jsonify({"error": str(e)})
-        
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
