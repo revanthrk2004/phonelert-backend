@@ -24,15 +24,7 @@ class PhoneStatus(db.Model):
 
 
  
-class User(db.Model):
-    __tablename__ = "user"
-    __table_args__ = {'extend_existing': True}
-
-    id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(512), nullable=False)
-    linked_devices = db.relationship("LinkedDevice", backref="user", lazy=True)
-    saved_locations = db.relationship("SavedLocation", backref="user", lazy=True, cascade="all, delete")
+from models.user_model import User  # import instead of redefining
 
 class SavedLocation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
