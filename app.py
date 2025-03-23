@@ -29,13 +29,15 @@ from sqlalchemy.orm import scoped_session, sessionmaker
 from sqlalchemy.exc import OperationalError
 from dotenv import load_dotenv  # ✅ Load environment variables
 from flask_jwt_extended import JWTManager
+from routes.auth_route import auth
+
 
 # ✅ Load .env file
 load_dotenv()
 
 app = create_app()
 migrate = Migrate(app, db)  # ✅ Enable migrations
-
+app.register_blueprint(auth, url_prefix='/auth')
 # ✅ Configure Flask-Mail
 app.config["MAIL_SERVER"] = "smtp.gmail.com"
 app.config["MAIL_PORT"] = 587
