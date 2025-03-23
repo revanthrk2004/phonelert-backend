@@ -48,7 +48,8 @@ mail = Mail(app)  # ✅ Initialize Flask-Mail
 
 
 # ✅ Enable CORS for all requests
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": ["http://localhost:8081"]}}, supports_credentials=True)
+
 
 tracking_users = {}  # ✅ Store tracking status per user
 # ✅ Load API Key from Environment
