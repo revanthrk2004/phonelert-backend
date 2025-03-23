@@ -172,35 +172,27 @@ def classify_location_by_ai(user_id, latitude, longitude):
 def send_email_alert(user_id, recipient_emails, live_lat=None, live_long=None):
     """Sends email alert based on stored location type (safe/unsafe)."""
     with app.app_context():
-        # If live location is missing, fetch from PhoneStatus
         if live_lat is None or live_long is None:
             phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
             if phone_status:
                 live_lat, live_long = phone_status.last_latitude, phone_status.last_longitude
 
-        # Check if this location was saved and its type
-        saved_location = UserLocation.query.filter_by(
-            user_id=user_id,
-            latitude=live_lat,
-            longitude=live_long
-        ).first()
+        location_type = classify_location_by_ai(user_id, live_lat, live_long)
+        print(f"🧠 AI classified location as: {location_type}")
 
-    location_type = classify_location_by_ai(user_id, live_lat, live_long)
+        if location_type.lower() == "unknown":
+            print("🤔 Unknown location. Asking user to label it.")
+            return jsonify({
+                "message": "unknown_location",
+                "latitude": live_lat,
+                "longitude": live_long
+            }), 200
 
-    if location_type.lower() == "unknown":
-        print("🤔 Unknown location. Asking user to label it.")
-        return jsonify({
-            "message": "unknown_location",
-            "latitude": live_lat,
-            "longitude": live_long
-        }), 200
+        if location_type.lower() == "safe":
+            print("✅ Location is safe. No alert will be sent.")
+            return
 
-    if location_type.lower() == "safe":
-        print("✅ Location is safe. No alert will be sent.")
-        return
-
-
-        # Send the alert
+        # 📨 Now this alert code runs only for "unsafe"
         google_maps_link = f"https://www.google.com/maps?q={live_lat},{live_long}"
         stop_tracking_link = f"https://phonelert-backend.onrender.com/stop-tracking?user_id={user_id}"
 
