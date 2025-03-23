@@ -28,7 +28,7 @@ from sqlalchemy import inspect
 from sqlalchemy.orm import scoped_session, sessionmaker
 from sqlalchemy.exc import OperationalError
 from dotenv import load_dotenv  # ✅ Load environment variables
-
+from flask_jwt_extended import JWTManager
 
 # ✅ Load .env file
 load_dotenv()
@@ -48,7 +48,9 @@ mail = Mail(app)  # ✅ Initialize Flask-Mail
 
 
 # ✅ Enable CORS for all requests
-CORS(app, resources={r"/*": {"origins": ["http://localhost:8081"]}}, supports_credentials=True)
+CORS(app, supports_credentials=True, resources={r"/*": {"origins": "http://localhost:8081"}})
+
+
 
 
 tracking_users = {}  # ✅ Store tracking status per user
@@ -70,15 +72,7 @@ def login():
     else:
         return jsonify({"error": "Invalid credentials"}), 401
 
-@app.before_request
-def handle_options_request():
-    """Handle CORS preflight requests"""
-    if request.method == "OPTIONS":
-        response = jsonify({"message": "CORS preflight request success"})
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        response.headers.add("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE, PUT")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type, Authorization")
-        return response, 200
+
 
 
 
