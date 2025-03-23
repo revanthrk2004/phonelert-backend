@@ -33,11 +33,22 @@ def register():
 @auth.route("/login", methods=["POST"])
 def login():
     data = request.json
-    user = User.query.filter_by(email=data["email"]).first()
+    email_or_id = data.get("email")
+    password = data.get("password")
 
-    if user and user.check_password(data["password"]):
-        access_token = create_access_token(identity=str(user.id))  # Convert ID to string
-        return jsonify({"access_token": access_token})
+    if not email_or_id or not password:
+        return jsonify({"error": "Missing email or password"}), 400
+
+    # Check if input is numeric (assume it's user ID)
+    user = None
+    if email_or_id.isdigit():
+        user = User.query.filter_by(id=int(email_or_id)).first()
+    else:
+        user = User.query.filter_by(email=email_or_id).first()
+
+    if user and user.check_password(password):
+        access_token = create_access_token(identity=str(user.id))
+        return jsonify({"access_token": access_token, "user_id": user.id}), 200
 
     return jsonify({"error": "Invalid credentials"}), 401
 

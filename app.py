@@ -89,6 +89,7 @@ def login():
 def check_location():
     """Receives live location data and sends an alert with the latest coordinates."""
     data = request.json
+    print("📥 Incoming check-location request:", data)  # 🔍 LOG the incoming data
     location_name = data.get("locationName", "Live Location")
     user_id = data.get("user_id")
     latitude = data.get("latitude")  # ✅ Get real-time latitude
@@ -96,6 +97,12 @@ def check_location():
     recipient_emails = data.get("emails", [])  
     
     if not user_id or latitude is None or longitude is None or not recipient_emails:
+        print("❌ Missing data in request:", {
+            "user_id": user_id,
+            "latitude": latitude,
+            "longitude": longitude,
+            "emails": recipient_emails
+        })
         return jsonify({"error": "Missing required data"}), 400
 
     print(f"📍 Live location received: {latitude}, {longitude}")
