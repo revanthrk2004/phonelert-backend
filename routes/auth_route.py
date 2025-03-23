@@ -8,7 +8,7 @@ auth = Blueprint("auth", __name__)
 @auth.route("/register", methods=["POST", "OPTIONS"])
 def register():
     if request.method == "OPTIONS":
-        return jsonify({}), 200  # ✅ This tells the browser "OPTIONS is OK"
+        return jsonify({}), 200  # ✅ Allows preflight success
 
     data = request.json
     if User.query.filter_by(email=data["email"]).first():

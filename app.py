@@ -51,7 +51,7 @@ mail = Mail(app)  # ✅ Initialize Flask-Mail
 CORS(app, supports_credentials=True, resources={
     r"/*": {
         "origins": "http://localhost:8081",
-        "methods": ["GET", "POST", "OPTIONS", "DELETE", "PUT"],
+        "methods": ["GET", "POST", "OPTIONS", "PUT", "DELETE"],
         "allow_headers": ["Content-Type", "Authorization"]
     }
 })
