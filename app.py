@@ -8,6 +8,9 @@ import time
 import threading  # To run background tasks for AI detection
 import requests  # To send notification to the user's other devices
 # Force Python to recognize 'backend/' as a package
+
+import numpy as np
+from sklearn.neighbors import KNeighborsClassifier
 from flask_mail import Mail, Message  # ✅ Add Flask-Mail
 from database.models import AlertHistory  # ✅ Add this line
 
@@ -140,6 +143,32 @@ def check_location():
 
 
 
+
+
+
+
+def classify_location_by_ai(user_id, latitude, longitude):
+    with app.app_context():
+        # Get all locations added by the user
+        user_locations = UserLocation.query.filter_by(user_id=user_id).all()
+
+        if not user_locations:
+            print("⚠️ No location history found for user.")
+            return "unknown"
+
+        # Prepare training data
+        coords = np.array([[loc.latitude, loc.longitude] for loc in user_locations])
+        labels = [loc.location_type for loc in user_locations]
+
+        # Train KNN model
+        knn = KNeighborsClassifier(n_neighbors=3)
+        knn.fit(coords, labels)
+
+        # Predict location type
+        prediction = knn.predict([[latitude, longitude]])[0]
+        print(f"🧠 AI Prediction for ({latitude}, {longitude}): {prediction}")
+        return prediction
+
 def send_email_alert(user_id, recipient_emails, live_lat=None, live_long=None):
     """Sends email alert based on stored location type (safe/unsafe)."""
     with app.app_context():
@@ -156,11 +185,20 @@ def send_email_alert(user_id, recipient_emails, live_lat=None, live_long=None):
             longitude=live_long
         ).first()
 
-        location_type = saved_location.location_type if saved_location else "unknown"
+    location_type = classify_location_by_ai(user_id, live_lat, live_long)
 
-        if location_type.lower() == "safe":
-            print("✅ Location is safe. No alert will be sent.")
-            return
+    if location_type.lower() == "unknown":
+        print("🤔 Unknown location. Asking user to label it.")
+        return jsonify({
+            "message": "unknown_location",
+            "latitude": live_lat,
+            "longitude": live_long
+        }), 200
+
+    if location_type.lower() == "safe":
+        print("✅ Location is safe. No alert will be sent.")
+        return
+
 
         # Send the alert
         google_maps_link = f"https://www.google.com/maps?q={live_lat},{live_long}"
