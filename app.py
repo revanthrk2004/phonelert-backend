@@ -149,26 +149,26 @@ def check_location():
 
 def classify_location_by_ai(user_id, latitude, longitude):
     with app.app_context():
-        # Get all locations added by the user
         user_locations = UserLocation.query.filter_by(user_id=user_id).all()
 
         if not user_locations:
             print("⚠️ No location history found for user.")
             return "unknown"
 
-        # Prepare training data
-        coords = np.array([[loc.latitude, loc.longitude] for loc in user_locations])
-        labels = [loc.location_type for loc in user_locations]
+        current_coords = (latitude, longitude)
 
-        # Train KNN model
-        knn = KNeighborsClassifier(n_neighbors=3)
-        knn.fit(coords, labels)
+        for loc in user_locations:
+            loc_coords = (loc.latitude, loc.longitude)
+            distance = geodesic(current_coords, loc_coords).meters
 
-        # Predict location type
-        prediction = knn.predict([[latitude, longitude]])[0]
-        print(f"🧠 AI Prediction for ({latitude}, {longitude}): {prediction}")
-        return prediction
+            print(f"📏 Distance from ({loc.latitude}, {loc.longitude}) → {distance:.2f}m")
 
+            if distance <= loc.radius:
+                print(f"✅ Inside radius {loc.radius}m → Classified as {loc.location_type}")
+                return loc.location_type
+
+        print("❌ Not within any saved location radius. Marking as unsafe.")
+        return "unsafe"
 def send_email_alert(user_id, recipient_emails, live_lat=None, live_long=None):
     """Sends email alert based on stored location type (safe/unsafe)."""
     with app.app_context():
