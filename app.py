@@ -174,23 +174,26 @@ def send_email_alert(user_id, recipient_emails, live_lat=None, live_long=None):
     with app.app_context():
         if live_lat is None or live_long is None:
             phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
-            if phone_status:
+        if phone_status:
                 live_lat, live_long = phone_status.last_latitude, phone_status.last_longitude
 
         location_type = classify_location_by_ai(user_id, live_lat, live_long)
         print(f"🧠 AI classified location as: {location_type}")
 
-        if location_type.lower() == "unknown":
-            print("🤔 Unknown location. Asking user to label it.")
-            return jsonify({
-                "message": "unknown_location",
-                "latitude": live_lat,
-                "longitude": live_long
-            }), 200
+    if location_type == "unknown":
+        print("🤖 AI: Unknown location — letting frontend ask the user to label.")
+        return jsonify({
+            "message": "unknown_location",
+            "latitude": latitude,
+            "longitude": longitude
+        }), 200
 
-        if location_type.lower() == "safe":
-            print("✅ Location is safe. No alert will be sent.")
-            return
+    if location_type.lower() == "safe":
+        print("✅ AI: Safe location — skipping alert.")
+        return
+
+# Only continue if AI says unsafe
+
 
         # 📨 Now this alert code runs only for "unsafe"
         google_maps_link = f"https://www.google.com/maps?q={live_lat},{live_long}"
@@ -274,7 +277,15 @@ def send_repeated_alerts(user_id, recipient_emails):
                 print(f"📌 Phone has stayed in the same location for 3 minutes. Asking AI for a decision...")
                 
                 # ✅ Ask AI to make a decision
+            decision = ai_decide_alert(user_id, current_lat, current_long)
+            if decision == "unsafe":
+                print("🚨 AI says UNSAFE. Sending alert...")
                 send_email_alert(user_id, recipient_emails, current_lat, current_long)
+            elif decision == "safe":
+                print("✅ AI says SAFE. No alert needed.")
+            else:
+                print("🤔 AI returned 'no_alert' or unknown. Skipping this round.")
+
 
             # ✅ Update last known position and timestamp
             last_lat, last_long = current_lat, current_long
@@ -377,9 +388,8 @@ def ai_decide_alert(user_id, latitude, longitude):
             location_type = saved_location.location_type  
             print(f"🧠 AI Decision: Using saved classification → {location_type}")
         else:
-            # If new location, classify as "unsafe" by default
-            location_type = "unsafe"
-            print(f"⚠️ AI Decision: New location detected, marking as UNSAFE!")
+            location_type = "unknown"
+            print(f"🆕 New location detected. Marking as UNKNOWN temporarily.")
 
         # ✅ Check if the phone has stayed in the same place for 3 minutes
         phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
@@ -400,6 +410,48 @@ def ai_decide_alert(user_id, latitude, longitude):
             return location_type
 
         return "no_alert"
+
+
+@app.route("/ai-location-check", methods=["POST"])
+def ai_location_check():
+    """Returns AI classification and number of learned locations."""
+    data = request.json
+    user_id = data.get("user_id")
+    latitude = data.get("latitude")
+    longitude = data.get("longitude")
+
+    if not user_id or latitude is None or longitude is None:
+        return jsonify({"error": "Missing user_id or coordinates"}), 400
+
+    try:
+        user_locations = UserLocation.query.filter_by(user_id=user_id).all()
+
+        current_coords = (latitude, longitude)
+        is_safe = False
+        used_locations = []
+
+        for loc in user_locations:
+            loc_coords = (loc.latitude, loc.longitude)
+            distance = geodesic(current_coords, loc_coords).meters
+            used_locations.append({
+                "name": loc.name,
+                "type": loc.location_type,
+                "distance": distance
+            })
+
+            if distance <= loc.radius:
+                is_safe = (loc.location_type == "safe")
+                break
+
+        return jsonify({
+            "is_safe": is_safe,
+            "used_locations": used_locations,
+            "total_learned": len(user_locations)
+        }), 200
+
+    except Exception as e:
+        print("❌ Error in ai_location_check:", e)
+        return jsonify({"error": "AI check failed", "details": str(e)}), 500
 
 
 
