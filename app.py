@@ -1,7 +1,6 @@
 import sys
 import os
 import logging
-import openai
 
 logging.basicConfig(level=logging.INFO)
 import json
@@ -29,7 +28,7 @@ from sqlalchemy import inspect
 from sqlalchemy.orm import scoped_session, sessionmaker
 from sqlalchemy.exc import OperationalError
 from dotenv import load_dotenv  # ✅ Load environment variables
-from openai import OpenAI
+
 
 # ✅ Load .env file
 load_dotenv()
@@ -53,7 +52,8 @@ CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 tracking_users = {}  # ✅ Store tracking status per user
 # ✅ Load API Key from Environment
-openai.api_key = os.getenv("OPENAI_API_KEY")
+
+
 
 @app.route('/auth/login', methods=['POST'])
 def login():
@@ -86,11 +86,12 @@ def handle_options_request():
 def check_location():
     """Receives live location data and sends an alert with the latest coordinates."""
     data = request.json
+    location_name = data.get("locationName", "Live Location")
     user_id = data.get("user_id")
     latitude = data.get("latitude")  # ✅ Get real-time latitude
     longitude = data.get("longitude")  # ✅ Get real-time longitude
     recipient_emails = data.get("emails", [])  
-
+    
     if not user_id or latitude is None or longitude is None or not recipient_emails:
         return jsonify({"error": "Missing required data"}), 400
 
@@ -126,107 +127,78 @@ def check_location():
 
 
 
-def should_send_alert(user_id, lat, long):
-    """Use AI to decide if an alert should be sent."""
-    
-    # ✅ Ask OpenAI for a decision
-    ai_prompt = f"""
-    A user is located at latitude {lat}, longitude {long}.
-    Should we send an alert if their phone has not moved for 3 minutes? 
-    Reply with 'YES' if an alert is needed or 'NO' if not.
-    """
-
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": ai_prompt}]
-    )
-
-    ai_decision = response["choices"][0]["message"]["content"].strip().upper()
-    
-    print(f"🤖 AI Decision: {ai_decision}")
-    
-    return ai_decision == "YES"
-
 
 
 
 def send_email_alert(user_id, recipient_emails, live_lat=None, live_long=None):
-    """Uses AI to decide if an alert should be sent and then sends an email."""
+    """Sends email alert based on stored location type (safe/unsafe)."""
     with app.app_context():
-        # ✅ 1️⃣ Fetch phone status if live location is missing
+        # If live location is missing, fetch from PhoneStatus
         if live_lat is None or live_long is None:
             phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
             if phone_status:
                 live_lat, live_long = phone_status.last_latitude, phone_status.last_longitude
 
-        # ✅ 2️⃣ Fetch past user location history
-        saved_location = UserLocation.query.filter_by(user_id=user_id).first()
-        
-        # ✅ 3️⃣ Prepare AI Input
-        ai_prompt = f"""
-        You are an AI monitoring a phone's location. Analyze the following details:
-
-        - Current Location: ({live_lat}, {live_long})
-        - Last Saved Location: ({saved_location.latitude if saved_location else 'Unknown'}, {saved_location.longitude if saved_location else 'Unknown'})
-        - Time Since Last Movement: 3 minutes
-        - Location is marked as {saved_location.location_type if saved_location else 'Unknown'}
-
-        **Question:** Based on this data, should an alert be sent to the user’s emergency contacts? Respond with 'YES' or 'NO' and a reason.
-        """
-
-        # ✅ 4️⃣ Ask OpenAI (GPT-4) for a decision
-        try:
-            ai_response = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=[{"role": "system", "content": ai_prompt}]
-            )
-            ai_decision = ai_response["choices"][0]["message"]["content"].strip().upper()
-
-            print(f"🤖 AI Decision: {ai_decision}")  # ✅ Log AI response
-            
-        except Exception as e:
-            print(f"❌ AI Decision Error: {str(e)}")
-            ai_decision = "ERROR"
-
-        # ✅ 5️⃣ Save AI Decision in Database
-        new_alert = AlertHistory(
+        # Check if this location was saved and its type
+        saved_location = UserLocation.query.filter_by(
             user_id=user_id,
             latitude=live_lat,
-            longitude=live_long,
-            location_type=saved_location.location_type if saved_location else "Unknown",
-            ai_decision=ai_decision,
-            timestamp=datetime.utcnow(),
-        )
-        db.session.add(new_alert)
-        db.session.commit()
+            longitude=live_long
+        ).first()
 
-        # ✅ 6️⃣ If AI says "NO", stop here
-        if ai_decision == "NO":
-            print(f"🛑 AI decided no alert is needed for user {user_id}.")
+        location_type = saved_location.location_type if saved_location else "unknown"
+
+        if location_type.lower() == "safe":
+            print("✅ Location is safe. No alert will be sent.")
             return
 
-        # ✅ 7️⃣ Send an email alert if AI says "YES"
+        # Send the alert
         google_maps_link = f"https://www.google.com/maps?q={live_lat},{live_long}"
         stop_tracking_link = f"https://phonelert-backend.onrender.com/stop-tracking?user_id={user_id}"
 
-        subject = "🚨 AI Alert: Your Phone is Still Left Behind!"
+        subject = "🚨 Alert: Your Phone Might Be Left Behind!"
         body = f"""
-        AI has detected that your phone has been left behind for too long.
+        Your phone has stayed too long at a potentially unsafe location.
 
-        📍 **Last Known Location:** {google_maps_link}
-
-        🛑 **Stop Tracking:** Click here to stop alerts → [Stop Tracking]({stop_tracking_link})
-
-        🚀 AI says: {ai_response["choices"][0]["message"]["content"]}
+        📍 Location: {google_maps_link}
+        🛑 Stop Tracking: {stop_tracking_link}
         """
 
         for email in recipient_emails:
             try:
                 msg = Message(subject, recipients=[email], body=body)
                 mail.send(msg)
-                print(f"✅ AI Alert Email sent to {email}")
+                print(f"✅ Alert Email sent to {email}")
             except Exception as e:
                 print(f"❌ Failed to send email to {email}: {str(e)}")
+
+@app.route("/add-location", methods=["POST"])
+def add_location():
+    data = request.json
+    user_id = data.get("user_id")
+    name = data.get("name")
+    latitude = data.get("latitude")
+    longitude = data.get("longitude")
+    location_type = data.get("location_type")
+
+    if not user_id or not name or not latitude or not longitude or not location_type:
+        return jsonify({"error": "Missing data"}), 400
+
+    try:
+        new_location = UserLocation(
+            user_id=user_id,
+            name=name,
+            latitude=latitude,
+            longitude=longitude,
+            location_type=location_type
+        )
+        db.session.add(new_location)
+        db.session.commit()
+        print(f"✅ Location saved: {name} ({location_type}) for user {user_id}")
+        return jsonify({"message": "Location saved successfully"}), 200
+    except Exception as e:
+        print(f"❌ Error saving location: {e}")
+        return jsonify({"error": str(e)}), 500
 
 def send_repeated_alerts(user_id, recipient_emails):
     """AI-powered alerts: Only sends emails if AI confirms it's necessary."""
@@ -458,19 +430,7 @@ def test_email():
 
 
 
-@app.route('/test-ai', methods=['GET'])
-def test_ai():
-    try:
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": "Hello"}]
-        )
-
-        return jsonify({"response": response.choices[0].message.content})
-    except Exception as e:
-        return jsonify({"error": str(e)})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
