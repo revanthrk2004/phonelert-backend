@@ -8,7 +8,7 @@ auth = Blueprint("auth", __name__)
 @auth.route("/register", methods=["POST", "OPTIONS"])
 def register():
     if request.method == "OPTIONS":
-        return jsonify({}), 200  # ✅ Allows preflight success
+        return jsonify({}), 200  # ✅ This makes preflight succeed
 
     data = request.json
     if User.query.filter_by(email=data["email"]).first():
@@ -16,10 +16,10 @@ def register():
 
     user = User(username=data["username"], email=data["email"])
     user.set_password(data["password"])
-
+    
     db.session.add(user)
     db.session.commit()
-
+    
     return jsonify({"message": "User registered successfully!"}), 201
 
 @auth.route("/login", methods=["POST"])
