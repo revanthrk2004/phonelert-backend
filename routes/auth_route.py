@@ -5,18 +5,21 @@ from database.db_manager import db
 
 auth = Blueprint("auth", __name__)
 
-@auth.route("/register", methods=["POST"])
+@auth.route("/register", methods=["POST", "OPTIONS"])
 def register():
+    if request.method == "OPTIONS":
+        return jsonify({}), 200  # ✅ This tells the browser "OPTIONS is OK"
+
     data = request.json
     if User.query.filter_by(email=data["email"]).first():
         return jsonify({"error": "User already exists"}), 400
 
     user = User(username=data["username"], email=data["email"])
     user.set_password(data["password"])
-    
+
     db.session.add(user)
     db.session.commit()
-    
+
     return jsonify({"message": "User registered successfully!"}), 201
 
 @auth.route("/login", methods=["POST"])
