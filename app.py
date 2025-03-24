@@ -169,6 +169,8 @@ def classify_location_by_ai(user_id, latitude, longitude):
 
         print("❌ Not within any saved location radius. Marking as unsafe.")
         return "unsafe"
+
+
 def send_email_alert(user_id, recipient_emails, live_lat=None, live_long=None):
     """Sends email alert based on stored location type (safe/unsafe)."""
     with app.app_context():
@@ -435,7 +437,7 @@ def ai_location_check():
             loc_coords = (loc.latitude, loc.longitude)
             distance = geodesic(current_coords, loc_coords).meters
             used_locations.append({
-                "name": loc.name,
+                "name": loc.location_name,
                 "type": loc.location_type,
                 "distance": distance
             })
