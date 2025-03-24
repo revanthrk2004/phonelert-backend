@@ -149,7 +149,7 @@ def check_location():
 
 def classify_location_by_ai(user_id, latitude, longitude):
     with app.app_context():
-        user_locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
+        user_locations = UserLocation.query.filter_by(user_id=user_id).all()
 
         if not user_locations:
             print("⚠️ No location history found for user.")
