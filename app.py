@@ -219,7 +219,7 @@ def send_email_alert(user_id, recipient_emails, live_lat=None, live_long=None):
 def add_location():
     data = request.json
     user_id = data.get("user_id")
-    name = data.get("name")
+    location_name = data.get("name")
     latitude = data.get("latitude")
     longitude = data.get("longitude")
     location_type = data.get("location_type")
@@ -230,7 +230,7 @@ def add_location():
     try:
         new_location = UserLocation(
             user_id=user_id,
-            name=name,
+            location_name=location_name,
             latitude=latitude,
             longitude=longitude,
             location_type=location_type
