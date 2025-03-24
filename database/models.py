@@ -3,15 +3,18 @@ from datetime import datetime
 
 
 class UserLocation(db.Model):
-    location_name = db.Column(db.String(100), primary_key=True)  # ✅ Now the primary key
-    latitude = db.Column(db.Float, nullable=False)
-    longitude = db.Column(db.Float, nullable=False)
-    location_type = db.Column(db.String(10), default="safe")  # ✅ "safe" or "unsafe" (chosen by user)
-    radius = db.Column(db.Integer, default=50)  # ✅ Default radius (meters)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)  # ✅ Track when the location was added
+    __tablename__ = 'user_location'
+
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), primary_key=True)
+    latitude = db.Column(db.Float, primary_key=True)
+    longitude = db.Column(db.Float, primary_key=True)
+    location_name = db.Column(db.String(100))
+    location_type = db.Column(db.String(10), default="safe")
+    radius = db.Column(db.Integer, default=50)
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
-        return f"<UserLocation {self.location_name}, Type={self.location_type}>"
+        return f"<UserLocation {self.location_name}, User={self.user_id}, Type={self.location_type}>"
 
 
 
