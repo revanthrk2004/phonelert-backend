@@ -224,7 +224,7 @@ def add_location():
     longitude = data.get("longitude")
     location_type = data.get("location_type")
 
-    if not user_id or not name or not latitude or not longitude or not location_type:
+    if not user_id or not location_name or latitude is None or longitude is None or not location_type:
         return jsonify({"error": "Missing data"}), 400
 
     try:
@@ -237,7 +237,8 @@ def add_location():
         )
         db.session.add(new_location)
         db.session.commit()
-        print(f"✅ Location saved: {name} ({location_type}) for user {user_id}")
+        print(f"✅ Location saved: {location_name} ({location_type}) for user {user_id}")
+
         return jsonify({"message": "Location saved successfully"}), 200
     except Exception as e:
         print(f"❌ Error saving location: {e}")
