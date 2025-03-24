@@ -460,7 +460,7 @@ def ai_location_check():
         return jsonify({"error": "Missing user_id or coordinates"}), 400
 
     try:
-        user_locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
+        user_locations = UserLocation.query.filter_by(user_id=user_id).all()
 
 
         current_coords = (latitude, longitude)
