@@ -12,7 +12,9 @@ class UserLocation(db.Model):
     location_type = db.Column(db.String(10), default="safe")
     radius = db.Column(db.Integer, default=50)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-
+     # 👇 NEW LINE
+    visible = db.Column(db.Boolean, default=True)
+    
     def __repr__(self):
         return f"<UserLocation {self.location_name}, User={self.user_id}, Type={self.location_type}>"
 

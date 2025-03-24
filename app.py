@@ -415,6 +415,39 @@ def ai_decide_alert(user_id, latitude, longitude):
         return "no_alert"
 
 
+@app.route('/get-locations/<int:user_id>', methods=['GET'])
+def get_locations(user_id):
+    locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
+    return jsonify([{
+        "name": loc.location_name,
+        "latitude": loc.latitude,
+        "longitude": loc.longitude,
+        "location_type": loc.location_type
+    } for loc in locations]), 200
+
+
+@app.route("/soft-delete-location", methods=["POST"])
+def soft_delete_location():
+    data = request.json
+    user_id = data.get("user_id")
+    latitude = data.get("latitude")
+    longitude = data.get("longitude")
+
+    if not user_id or latitude is None or longitude is None:
+        return jsonify({"error": "Missing data"}), 400
+
+    location = UserLocation.query.filter_by(user_id=user_id, latitude=latitude, longitude=longitude).first()
+    if not location:
+        return jsonify({"error": "Location not found"}), 404
+
+    location.visible = False
+    db.session.commit()
+    return jsonify({"message": "Location soft-deleted (hidden from UI)"}), 200
+
+
+
+
+
 @app.route("/ai-location-check", methods=["POST"])
 def ai_location_check():
     """Returns AI classification and number of learned locations."""
