@@ -11,6 +11,9 @@ import requests  # To send notification to the user's other devices
 from sklearn.neighbors import KNeighborsClassifier
 import numpy as np
 from sklearn.cluster import DBSCAN
+from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
+from sklearn.model_selection import train_test_split
+
 
 from flask_mail import Mail, Message  # ✅ Add Flask-Mail
 from database.models import AlertHistory  # ✅ Add this line
@@ -223,6 +226,44 @@ def predict_location_safety(user_id, latitude, longitude):
 
     prediction = model.predict([[latitude, longitude]])[0]
     return "safe" if prediction == 1 else "unsafe"
+
+
+
+@app.route("/evaluate-classification", methods=["GET"])
+def evaluate_classification_model():
+    """Evaluate AI decision logic using precision, recall, and F1."""
+    user_id = request.args.get("user_id", type=int)
+    if not user_id:
+        return jsonify({"error": "user_id is required"}), 400
+
+    with app.app_context():
+        user_locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
+        if not user_locations:
+            return jsonify({"error": "No saved locations found for this user"}), 404
+
+        X = []
+        y_true = []
+
+        for loc in user_locations:
+            X.append([loc.latitude, loc.longitude])
+            y_true.append(1 if loc.location_type == "unsafe" else 0)
+
+        y_pred = []
+        for coords in X:
+            pred = predict_location_safety(user_id, coords[0], coords[1])
+            y_pred.append(1 if pred == "unsafe" else 0)
+
+        precision = precision_score(y_true, y_pred, zero_division=0)
+        recall = recall_score(y_true, y_pred, zero_division=0)
+        f1 = f1_score(y_true, y_pred, zero_division=0)
+        accuracy = sum(1 for a, b in zip(y_true, y_pred) if a == b) / len(y_true)
+
+        return jsonify({
+            "accuracy": round(accuracy, 4),
+            "precision": round(precision, 4),
+            "recall": round(recall, 4),
+            "f1_score": round(f1, 4),
+        }), 200
 
 
 @app.route('/auth/login', methods=['POST'])
@@ -853,6 +894,74 @@ def trigger_clustering(user_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/evaluate-model/<int:user_id>", methods=["GET"])
+def evaluate_model(user_id):
+    from sklearn.metrics import mean_absolute_error, mean_squared_error
+    import numpy as np
+    from database.models import AlertHistory
+
+    with app.app_context():
+        records = AlertHistory.query.filter_by(user_id=user_id).all()
+        if not records:
+            return jsonify({"error": "No alert history"}), 400
+
+        # Coordinates as input (X) and labels as output (y)
+        X = np.array([[r.latitude, r.longitude] for r in records])
+        y_true = np.array([1 if r.location_type == "safe" else 0 for r in records])
+
+        # Train model if needed
+        if user_id not in knn_models:
+            train_knn_model(user_id)
+
+        model = knn_models.get(user_id)
+        if not model:
+            return jsonify({"error": "Model not trained"}), 500
+
+        y_pred = model.predict(X)
+
+        mae = mean_absolute_error(y_true, y_pred)
+        mse = mean_squared_error(y_true, y_pred)
+        rmse = np.sqrt(mse)
+        accuracy = (y_true == y_pred).mean()
+
+        return jsonify({
+            "mae": round(mae, 4),
+            "mse": round(mse, 4),
+            "rmse": round(rmse, 4),
+            "accuracy": round(accuracy, 4)
+        })
+
+
+@app.route("/ai/evaluate", methods=["GET"])
+def evaluate_ai_model():
+    from database.models import UserLocation
+    with app.app_context():
+        user_id = request.args.get("user_id", type=int)
+        if not user_id:
+            return jsonify({"error": "Missing user_id"}), 400
+
+        locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
+        if len(locations) < 4:
+            return jsonify({"error": "Not enough data to evaluate"}), 400
+
+        X = [[loc.latitude, loc.longitude] for loc in locations]
+        y = [1 if loc.location_type == "safe" else 0 for loc in locations]
+
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4, random_state=42)
+
+        model = KNeighborsClassifier(n_neighbors=3)
+        model.fit(X_train, y_train)
+
+        y_pred = model.predict(X_test)
+
+        results = {
+            "accuracy": round(accuracy_score(y_test, y_pred), 4),
+            "precision": round(precision_score(y_test, y_pred, zero_division=0), 4),
+            "recall": round(recall_score(y_test, y_pred, zero_division=0), 4),
+            "f1_score": round(f1_score(y_test, y_pred, zero_division=0), 4)
+        }
+
+        return jsonify(results)
 
 
 if __name__ == "__main__":
