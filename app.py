@@ -258,28 +258,26 @@ def classify_location_by_ai(user_id, latitude, longitude):
 def send_email_alert(user_id, recipient_emails, live_lat=None, live_long=None):
     """Sends email alert based on stored location type (safe/unsafe)."""
     with app.app_context():
+        phone_status = None
         if live_lat is None or live_long is None:
             phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
-        if phone_status:
+            if phone_status:
                 live_lat, live_long = phone_status.last_latitude, phone_status.last_longitude
 
         location_type = classify_location_by_ai(user_id, live_lat, live_long)
         print(f"🧠 AI classified location as: {location_type}")
 
-    if location_type == "unknown":
-        print("🤖 AI: Unknown location — letting frontend ask the user to label.")
-        return jsonify({
-            "message": "unknown_location",
-            "latitude": latitude,
-            "longitude": longitude
-        }), 200
+        if location_type == "unknown":
+            print("🤖 AI: Unknown location — letting frontend ask the user to label.")
+            return jsonify({
+                "message": "unknown_location",
+                "latitude": live_lat,
+                "longitude": live_long
+            }), 200
 
-    if location_type.lower() == "safe":
-        print("✅ AI: Safe location — skipping alert.")
-        return
-
-# Only continue if AI says unsafe
-
+        if location_type.lower() == "safe":
+            print("✅ AI: Safe location — skipping alert.")
+            return
 
         # 📨 Now this alert code runs only for "unsafe"
         google_maps_link = f"https://www.google.com/maps?q={live_lat},{live_long}"
@@ -300,7 +298,6 @@ def send_email_alert(user_id, recipient_emails, live_lat=None, live_long=None):
                 print(f"✅ Alert Email sent to {email}")
             except Exception as e:
                 print(f"❌ Failed to send email to {email}: {str(e)}")
-
 
 
 
