@@ -504,12 +504,15 @@ def ai_decide_alert(user_id, latitude, longitude):
         current_coords = (latitude, longitude)
         closest_location = None
         min_distance = float("inf")
+        buffer = 20
 
         for loc in user_locations:
             loc_coords = (loc.latitude, loc.longitude)
             distance = geodesic(current_coords, loc_coords).meters
 
-            if distance <= loc.radius and distance < min_distance:
+            
+            if distance <= (loc.radius + buffer) and distance < min_distance:
+
                 closest_location = loc
                 min_distance = distance
 
