@@ -560,28 +560,34 @@ def ai_location_check():
         return jsonify({"error": "Missing user_id or coordinates"}), 400
 
     try:
-        user_locations = UserLocation.query.filter_by(user_id=user_id).all()
+    user_locations = UserLocation.query.filter_by(user_id=user_id).all()
 
+    current_coords = (latitude, longitude)
+    is_safe = False
+    used_locations = []
 
-        current_coords = (latitude, longitude)
-        is_safe = False
-        used_locations = []
+    # ✅ Collect nearby locations (within 200m)
+    for loc in user_locations:
+        loc_coords = (loc.latitude, loc.longitude)
+        distance = geodesic(current_coords, loc_coords).meters
 
-        # 🧠 Use trained AI to decide
-        ai_decision = predict_location_safety(user_id, latitude, longitude)
+        if distance <= 200:
+            used_locations.append({
+                "name": loc.location_name,
+                "type": loc.location_type,
+                "distance": distance
+            })
 
-        is_safe = (ai_decision == "safe")
+    # ✅ Use trained AI to decide
+    ai_decision = predict_location_safety(user_id, latitude, longitude)
+    is_safe = (ai_decision == "safe")
 
-        return jsonify({
-            "is_safe": is_safe,
-            "used_locations": used_locations,
-            "total_learned": len(user_locations)
-        }), 200
-
-    except Exception as e:
-        print("❌ Error in ai_location_check:", e)
-        return jsonify({"error": "AI check failed", "details": str(e)}), 500
-
+    return jsonify({
+        "is_safe": is_safe,
+        "used_locations": used_locations,
+        "total_learned": len(user_locations),
+        "ai_decision": ai_decision
+    }), 200
 
 
 
