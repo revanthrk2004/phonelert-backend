@@ -310,19 +310,38 @@ def add_location():
         return jsonify({"error": "Missing data"}), 400
 
     try:
-        new_location = UserLocation(
+        # 🔍 Check if this location already exists (even if soft-deleted)
+        existing_location = UserLocation.query.filter_by(
             user_id=user_id,
-            location_name=location_name,
             latitude=latitude,
-            longitude=longitude,
-            location_type=location_type,
-            visible=True  # 🧠 MAKE SURE THIS IS SET
-        )
-        db.session.add(new_location)
-        db.session.commit()
-        print(f"✅ Location saved: {location_name} ({location_type}) for user {user_id}")
+            longitude=longitude
+        ).first()
 
+        if existing_location:
+            # 🔁 Update instead of adding new
+            existing_location.visible = True
+            existing_location.location_name = location_name
+            existing_location.location_type = location_type
+            existing_location.timestamp = datetime.utcnow()
+            print(f"♻️ Reactivated location: {location_name} for user {user_id}")
+        else:
+            # 🆕 Add new location
+            new_location = UserLocation(
+                user_id=user_id,
+                location_name=location_name,
+                latitude=latitude,
+                longitude=longitude,
+                location_type=location_type,
+                radius=50,
+                timestamp=datetime.utcnow(),
+                visible=True
+            )
+            db.session.add(new_location)
+            print(f"✅ New location added: {location_name} for user {user_id}")
+
+        db.session.commit()
         return jsonify({"message": "Location saved successfully"}), 200
+
     except Exception as e:
         print(f"❌ Error saving location: {e}")
         return jsonify({"error": str(e)}), 500
