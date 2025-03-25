@@ -127,19 +127,26 @@ def update_phone_status():
     if not user_id or latitude is None or longitude is None:
         return jsonify({"error": "Missing user_id or coordinates"}), 400
 
-    phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
-    if not phone_status:
-        phone_status = PhoneStatus(user_id=user_id)
+    try:
+        phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
+        if phone_status:
+            phone_status.last_latitude = latitude
+            phone_status.last_longitude = longitude
+        else:
+            phone_status = PhoneStatus(
+                user_id=user_id,
+                last_latitude=latitude,
+                last_longitude=longitude
+            )
+            db.session.add(phone_status)
 
-    phone_status.last_latitude = latitude
-    phone_status.last_longitude = longitude
-    phone_status.tracking_active = True
+        db.session.commit()
+        print(f"📲 Phone status updated for user {user_id}: {latitude}, {longitude}")
+        return jsonify({"message": "Phone status updated"}), 200
 
-    db.session.add(phone_status)
-    db.session.commit()
-
-    print(f"📡 Updated phone status: ({latitude}, {longitude}) for user {user_id}")
-    return jsonify({"message": "Phone location updated"}), 200
+    except Exception as e:
+        print("❌ Error updating phone status:", e)
+        return jsonify({"error": "Failed to update phone status", "details": str(e)}), 500
 
 
 
