@@ -560,17 +560,14 @@ def ai_location_check():
         return jsonify({"error": "Missing user_id or coordinates"}), 400
 
     try:
-        user_locations = UserLocation.query.filter_by(user_id=user_id).all()
-
+        user_locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
         current_coords = (latitude, longitude)
-        is_safe = False
         used_locations = []
 
-        # ✅ Collect nearby locations (within 200m)
+        # 🧠 Look for nearby locations
         for loc in user_locations:
             loc_coords = (loc.latitude, loc.longitude)
             distance = geodesic(current_coords, loc_coords).meters
-
             if distance <= 200:
                 used_locations.append({
                     "name": loc.location_name,
@@ -578,9 +575,14 @@ def ai_location_check():
                     "distance": distance
                 })
 
-        # ✅ Use trained AI to decide
+        # 🧠 AI Decision
         ai_decision = predict_location_safety(user_id, latitude, longitude)
         is_safe = (ai_decision == "safe")
+
+        # ✅ Optional: re-train if nothing is recognized and visible locations exist
+        if ai_decision == "unknown" and user_locations:
+            print("🔁 Retraining AI model for user", user_id)
+            retrain_model_for_user(user_id)  # <-- Make sure this exists
 
         return jsonify({
             "is_safe": is_safe,
@@ -592,6 +594,15 @@ def ai_location_check():
     except Exception as e:
         print("❌ Error in ai_location_check:", e)
         return jsonify({"error": "AI check failed", "details": str(e)}), 500
+
+
+def retrain_model_for_user(user_id):
+    # Get all visible locations again
+    visible_locs = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
+    # Replace this with your AI model's actual retraining logic
+    print(f"🧠 [Retrain] Rebuilding model for {len(visible_locs)} locations...")
+    # You can call your training logic here
+    # e.g., train_model(user_id, visible_locs)
 
 
 
