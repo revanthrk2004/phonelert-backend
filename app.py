@@ -569,7 +569,6 @@ def soft_delete_location():
 
 @app.route("/ai-location-check", methods=["POST"])
 def ai_location_check():
-    """Returns AI classification and number of learned locations."""
     data = request.json
     user_id = data.get("user_id")
     latitude = data.get("latitude")
@@ -583,7 +582,9 @@ def ai_location_check():
         current_coords = (latitude, longitude)
         used_locations = []
 
-        # 🧠 Look for nearby locations
+        closest_location = None
+        closest_distance = float("inf")
+
         for loc in user_locations:
             loc_coords = (loc.latitude, loc.longitude)
             distance = geodesic(current_coords, loc_coords).meters
@@ -593,15 +594,22 @@ def ai_location_check():
                     "type": loc.location_type,
                     "distance": distance
                 })
+                if distance < closest_distance:
+                    closest_distance = distance
+                    closest_location = loc
 
-        # 🧠 AI Decision
-        ai_decision = predict_location_safety(user_id, latitude, longitude)
-        is_safe = (ai_decision == "safe")
+        if closest_location:
+            is_safe = (closest_location.location_type == "safe")
+            ai_decision = closest_location.location_type
+            print(f"📍 Nearby match: {closest_location.location_name} ({ai_decision}) [{closest_distance:.2f}m]")
+        else:
+            ai_decision = predict_location_safety(user_id, latitude, longitude)
+            is_safe = (ai_decision == "safe")
+            print(f"❌ AI fallback decision: {ai_decision}")
 
-        # ✅ Optional: re-train if nothing is recognized and visible locations exist
-        if ai_decision == "unknown" and user_locations:
-            print("🔁 Retraining AI model for user", user_id)
-            retrain_model_for_user(user_id)  # <-- Make sure this exists
+            if ai_decision == "unknown" and user_locations:
+                print("🔁 Retraining AI model for user", user_id)
+                retrain_model_for_user(user_id)
 
         return jsonify({
             "is_safe": is_safe,
