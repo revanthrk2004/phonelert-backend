@@ -39,11 +39,6 @@ class SavedLocation(db.Model):
     longitude = db.Column(db.Float, nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
-class LinkedDevice(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    device_name = db.Column(db.String(100), nullable=False, unique=True)  # ✅ Ensure device names are unique
-    fcm_token = db.Column(db.String(255), nullable=False, unique=True)  # ✅ Each device should have a unique FCM token
 
 class AlertHistory(db.Model):
     __tablename__ = "alert_history"

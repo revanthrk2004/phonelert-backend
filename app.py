@@ -10,6 +10,7 @@ import requests  # To send notification to the user's other devices
 # Force Python to recognize 'backend/' as a package
 from sklearn.neighbors import KNeighborsClassifier
 import numpy as np
+from sklearn.cluster import DBSCAN
 
 from flask_mail import Mail, Message  # ✅ Add Flask-Mail
 from database.models import AlertHistory  # ✅ Add this line
@@ -67,6 +68,128 @@ knn_models = {}  # Store per-user trained models
 tracking_users = {}  # ✅ Store tracking status per user
 # ✅ Load API Key from Environment
 
+
+
+def cluster_and_save_user_locations(user_id, eps=50, min_samples=2):
+    """Cluster historical alert locations and save new UserLocation entries."""
+    from database.models import UserLocation, AlertHistory
+    from geopy.distance import geodesic
+    import numpy as np
+
+    with app.app_context():
+        history = get_user_location_history(user_id)
+        if not history:
+            print(f"⚠️ No alert history found for user {user_id}.")
+            return
+
+        coords = np.array(history)
+        kms_per_radian = 6371.0088
+        epsilon = eps / 1000.0 / kms_per_radian  # meters to radians
+
+        dbscan = DBSCAN(eps=epsilon, min_samples=min_samples, metric='haversine')
+        labels = dbscan.fit_predict(np.radians(coords))
+
+        cluster_centers = {}
+        for label in set(labels):
+            if label == -1:
+                continue  # noise
+            cluster_points = coords[labels == label]
+            center = cluster_points.mean(axis=0)
+            cluster_centers[label] = center
+
+        saved_count = 0
+        for label, (lat, lon) in cluster_centers.items():
+            lat = float(lat)
+            lon = float(lon)
+            location_name = f"Cluster {label + 1}"
+            existing_locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
+
+            too_close = False
+            for existing in existing_locations:
+                dist = geodesic((lat, lon), (existing.latitude, existing.longitude)).meters
+                if dist < 30:
+                    too_close = True
+                    break
+
+            if not too_close:
+                new_loc = UserLocation(
+                    user_id=user_id,
+                    latitude=lat,
+                    longitude=lon,
+                    location_name=location_name,
+                    location_type="unsafe",
+                    radius=50,
+                    visible=True
+                )
+                db.session.add(new_loc)
+                saved_count += 1
+                print(f"✅ Saved cluster location: {location_name} at ({lat}, {lon})")
+            else:
+                print(f"⏩ Skipped {location_name} (too close to existing location)")
+
+        db.session.commit()
+        print(f"🏁 Clustering complete. {saved_count} new locations saved for user {user_id}.")
+
+
+
+def is_near_cluster(user_id, current_lat, current_long, threshold_meters=50):
+    """Check if current location is near a learned AI cluster."""
+    from geopy.distance import geodesic
+
+    clusters = find_location_clusters(user_id)
+    if not clusters:
+        return False, None  # No learned spots
+
+    current = (current_lat, current_long)
+    for center in clusters:
+        distance = geodesic(current, center).meters
+        if distance <= threshold_meters:
+            print(f"🤖 Matched AI cluster at {center} [~{distance:.2f}m away]")
+            return True, center
+
+    return False, None
+
+
+def find_location_clusters(user_id, eps=0.0005, min_samples=3):
+    """
+    Cluster user's location history using DBSCAN.
+    eps ~ approx 50m, adjust based on density.
+    """
+    coords = get_user_location_history(user_id)
+    if not coords:
+        print("⚠️ No history to cluster for user", user_id)
+        return []
+
+    # Convert to numpy array
+    X = np.array(coords)
+
+    # Run DBSCAN
+    db = DBSCAN(eps=eps, min_samples=min_samples, metric='euclidean')
+    labels = db.fit_predict(X)
+
+    clusters = {}
+    for label, (lat, long) in zip(labels, coords):
+        if label == -1:
+            continue  # skip noise
+        if label not in clusters:
+            clusters[label] = []
+        clusters[label].append((lat, long))
+
+    # Get cluster centers (mean of points)
+    cluster_centers = []
+    for points in clusters.values():
+        lats, longs = zip(*points)
+        center = (sum(lats) / len(lats), sum(longs) / len(longs))
+        cluster_centers.append(center)
+
+    print(f"✅ Found {len(cluster_centers)} clusters for user {user_id}")
+    return cluster_centers
+
+def get_user_location_history(user_id):
+    """Fetch past coordinates from alert history for clustering."""
+    with app.app_context():
+        records = AlertHistory.query.filter_by(user_id=user_id).all()
+        return [(r.latitude, r.longitude) for r in records]
 
 
 def train_knn_model(user_id):
@@ -491,7 +614,6 @@ def monitor_phone_location(user_id):
 def ai_decide_alert(user_id, latitude, longitude):
     """AI decides whether an alert should be sent based on location history."""
     with app.app_context():
-        # ✅ Check if this location is already classified
         user_locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
 
         if not user_locations:
@@ -499,36 +621,37 @@ def ai_decide_alert(user_id, latitude, longitude):
             return "no_alert"
 
         current_coords = (latitude, longitude)
-        closest_location = None
-        min_distance = float("inf")
-        buffer = 20
+        buffer = 20  # meters
 
-        for loc in user_locations:
-            loc_coords = (loc.latitude, loc.longitude)
-            distance = geodesic(current_coords, loc_coords).meters
+        # Sort by distance and find closest match within radius
+        sorted_locations = sorted(
+            user_locations,
+            key=lambda loc: geodesic(current_coords, (loc.latitude, loc.longitude)).meters
+        )
 
-            
-            if distance <= (loc.radius + buffer) and distance < min_distance:
-
-                closest_location = loc
-                min_distance = distance
-
-        if closest_location:
-            print(f"🧠 AI Decision: Closest match → {closest_location.location_name} ({closest_location.location_type})")
-            location_type = closest_location.location_type
+        location_type = "unknown"
+        for loc in sorted_locations:
+            dist = geodesic(current_coords, (loc.latitude, loc.longitude)).meters
+            if dist <= (loc.radius + buffer):
+                print(f"🧠 AI Decision: Closest match → {loc.location_name} ({loc.location_type})")
+                location_type = loc.location_type
+                break
         else:
-            print("❌ AI Decision: No match found. Marking as unknown.")
-            location_type = "unknown"
+            matched_cluster, center = is_near_cluster(user_id, latitude, longitude)
+            if matched_cluster:
+                print("🤖 AI match: Frequently visited cluster")
+                location_type = "unsafe"
+            else:
+                print("❌ AI Decision: No match or cluster. Marking as unknown.")
+                location_type = "unknown"
 
-        # 🧠 Check phone status
+        # Only log alert if phone is stationary
         phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
         if phone_status:
             phone_coords = (phone_status.last_latitude, phone_status.last_longitude)
             dist = geodesic(phone_coords, current_coords).meters
-            if dist < 20:  # meters
+            if dist < 20:
                 print("📌 Phone is stationary (within 20m). Logging alert history.")
-
-                # ✅ Log the AI decision in `alert_history`
                 new_alert = AlertHistory(
                     user_id=user_id,
                     latitude=latitude,
@@ -538,6 +661,12 @@ def ai_decide_alert(user_id, latitude, longitude):
                 )
                 db.session.add(new_alert)
                 db.session.commit()
+
+                # Auto-trigger clustering every 10 alerts
+                alert_count = AlertHistory.query.filter_by(user_id=user_id).count()
+                if alert_count % 10 == 0:
+                    print("🤖 Auto-triggering clustering due to 10 alerts.")
+                    cluster_and_save_user_locations(user_id)
 
                 return location_type
 
@@ -705,6 +834,23 @@ def test_email():
     except Exception as e:
         return jsonify({"error": f"❌ Failed to send email: {str(e)}"}), 500
 
+
+@app.route("/cluster-user-locations/<int:user_id>", methods=["GET"])
+def cluster_user_locations(user_id):
+    try:
+        cluster_and_save_user_locations(user_id)
+        return jsonify({"message": f"✅ Clustering done for user {user_id}"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/cluster-locations/<int:user_id>", methods=["GET"])
+def trigger_clustering(user_id):
+    try:
+        cluster_and_save_user_locations(user_id)
+        return jsonify({"message": f"✅ Clustering triggered for user {user_id}"}), 200
+    except Exception as e:
+        print(f"❌ Clustering failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
 
