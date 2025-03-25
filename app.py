@@ -71,7 +71,7 @@ tracking_users = {}  # ✅ Store tracking status per user
 
 def train_knn_model(user_id):
     with app.app_context():
-        locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
+        locations = UserLocation.query.filter_by(user_id=user_id).all()
         if not locations:
             print("⚠️ No locations to train for user:", user_id)
             return None
@@ -469,7 +469,7 @@ def ai_decide_alert(user_id, latitude, longitude):
     """AI decides whether an alert should be sent based on location history."""
     with app.app_context():
         # ✅ Check if this location is already classified
-        user_locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
+        user_locations = UserLocation.query.filter_by(user_id=user_id).all()
 
         if not user_locations:
             print("⚠️ No visible locations to learn from.")
@@ -517,7 +517,7 @@ def ai_decide_alert(user_id, latitude, longitude):
 
 @app.route('/get-locations/<int:user_id>', methods=['GET'])
 def get_locations(user_id):
-    locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
+    locations = UserLocation.query.filter_by(user_id=user_id).all()
     return jsonify([{
         "name": loc.location_name,
         "latitude": loc.latitude,
