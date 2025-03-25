@@ -8,9 +8,9 @@ import time
 import threading  # To run background tasks for AI detection
 import requests  # To send notification to the user's other devices
 # Force Python to recognize 'backend/' as a package
-
-import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
+import numpy as np
+
 from flask_mail import Mail, Message  # ✅ Add Flask-Mail
 from database.models import AlertHistory  # ✅ Add this line
 
@@ -63,10 +63,43 @@ CORS(app, supports_credentials=True, resources={
 
 
 
-
+knn_models = {}  # Store per-user trained models
 tracking_users = {}  # ✅ Store tracking status per user
 # ✅ Load API Key from Environment
 
+
+
+def train_knn_model(user_id):
+    with app.app_context():
+        locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
+        if not locations:
+            print("⚠️ No locations to train for user:", user_id)
+            return None
+
+        X = []
+        y = []
+
+        for loc in locations:
+            X.append([loc.latitude, loc.longitude])
+            y.append(1 if loc.location_type == "safe" else 0)
+
+        model = KNeighborsClassifier(n_neighbors=3)
+        model.fit(np.array(X), np.array(y))
+        knn_models[user_id] = model
+        print(f"✅ Trained KNN for user {user_id} on {len(X)} locations.")
+        return model
+
+def predict_location_safety(user_id, latitude, longitude):
+    if user_id not in knn_models:
+        print("🧠 No model found. Training KNN on the fly...")
+        model = train_knn_model(user_id)
+        if not model:
+            return "unknown"
+    else:
+        model = knn_models[user_id]
+
+    prediction = model.predict([[latitude, longitude]])[0]
+    return "safe" if prediction == 1 else "unsafe"
 
 
 @app.route('/auth/login', methods=['POST'])
@@ -278,21 +311,20 @@ def send_repeated_alerts(user_id, recipient_emails):
             # ✅ Check if phone stayed in the same spot for 3 minutes
             if (current_lat, current_long) == (last_lat, last_long):
                 print(f"📌 Phone has stayed in the same location for 3 minutes. Asking AI for a decision...")
-                
+
                 # ✅ Ask AI to make a decision
-            decision = ai_decide_alert(user_id, current_lat, current_long)
-            if decision == "unsafe":
-                print("🚨 AI says UNSAFE. Sending alert...")
-                send_email_alert(user_id, recipient_emails, current_lat, current_long)
-            elif decision == "safe":
-                print("✅ AI says SAFE. No alert needed.")
-            else:
-                print("🤔 AI returned 'no_alert' or unknown. Skipping this round.")
+                decision = ai_decide_alert(user_id, current_lat, current_long)
+                if decision == "unsafe":
+                    print("🚨 AI says UNSAFE. Sending alert...")
+                    send_email_alert(user_id, recipient_emails, current_lat, current_long)
+                elif decision == "safe":
+                    print("✅ AI says SAFE. No alert needed.")
+                else:
+                    print("🤔 AI returned 'no_alert' or unknown. Skipping this round.")
 
-
-            # ✅ Update last known position and timestamp
-            last_lat, last_long = current_lat, current_long
-            last_update_time = datetime.utcnow()
+                # ✅ Update last known position and timestamp
+                last_lat, last_long = current_lat, current_long
+                last_update_time = datetime.utcnow()
 
 
 
@@ -467,18 +499,10 @@ def ai_location_check():
         is_safe = False
         used_locations = []
 
-        for loc in user_locations:
-            loc_coords = (loc.latitude, loc.longitude)
-            distance = geodesic(current_coords, loc_coords).meters
-            used_locations.append({
-                "name": loc.location_name,
-                "type": loc.location_type,
-                "distance": distance
-            })
+        # 🧠 Use trained AI to decide
+        ai_decision = predict_location_safety(user_id, latitude, longitude)
 
-            if distance <= loc.radius:
-                is_safe = (loc.location_type == "safe")
-                break
+        is_safe = (ai_decision == "safe")
 
         return jsonify({
             "is_safe": is_safe,
