@@ -48,12 +48,11 @@ class LinkedDevice(db.Model):
 class AlertHistory(db.Model):
     __tablename__ = "alert_history"
 
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, nullable=False)
-    latitude = db.Column(db.Float, nullable=False)
-    longitude = db.Column(db.Float, nullable=False)
-    location_type = db.Column(db.String(20), nullable=False)  # safe or unsafe
-    ai_decision = db.Column(db.String(10), nullable=False)  # sent or skipped
+    user_id = db.Column(db.Integer, primary_key=True)
+    latitude = db.Column(db.Float, primary_key=True)
+    longitude = db.Column(db.Float, primary_key=True)
+    location_type = db.Column(db.String(20), nullable=False)
+    ai_decision = db.Column(db.String(10), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
