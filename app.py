@@ -488,7 +488,7 @@ def ai_decide_alert(user_id, latitude, longitude):
     """AI decides whether an alert should be sent based on location history."""
     with app.app_context():
         # ✅ Check if this location is already classified
-        user_locations = UserLocation.query.filter_by(user_id=user_id).all()
+        user_locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
 
         if not user_locations:
             print("⚠️ No visible locations to learn from.")
@@ -513,23 +513,26 @@ def ai_decide_alert(user_id, latitude, longitude):
             print("❌ AI Decision: No match found. Marking as unknown.")
             location_type = "unknown"
 
-        # ✅ Check phone status to confirm it's stationary
+        # 🧠 Check phone status
         phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
-        if phone_status and (phone_status.last_latitude, phone_status.last_longitude) == (latitude, longitude):
-            print("📌 Phone is stationary. Logging alert history.")
+        if phone_status:
+            phone_coords = (phone_status.last_latitude, phone_status.last_longitude)
+            dist = geodesic(phone_coords, current_coords).meters
+            if dist < 20:  # meters
+                print("📌 Phone is stationary (within 20m). Logging alert history.")
 
-            # ✅ Log the AI decision in `alert_history`
-            new_alert = AlertHistory(
-                user_id=user_id,
-                latitude=latitude,
-                longitude=longitude,
-                location_type=location_type,
-                ai_decision="sent"
-            )
-            db.session.add(new_alert)
-            db.session.commit()
+                # ✅ Log the AI decision in `alert_history`
+                new_alert = AlertHistory(
+                    user_id=user_id,
+                    latitude=latitude,
+                    longitude=longitude,
+                    location_type=location_type,
+                    ai_decision="sent"
+                )
+                db.session.add(new_alert)
+                db.session.commit()
 
-            return location_type
+                return location_type
 
         return "no_alert"
 
