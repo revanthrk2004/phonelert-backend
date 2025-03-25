@@ -117,7 +117,51 @@ def login():
         return jsonify({"error": "Invalid credentials"}), 401
 
 
+@app.route("/update-phone-status", methods=["POST"])
+def update_phone_status():
+    data = request.json
+    user_id = data.get("user_id")
+    latitude = data.get("latitude")
+    longitude = data.get("longitude")
 
+    if not user_id or latitude is None or longitude is None:
+        return jsonify({"error": "Missing user_id or coordinates"}), 400
+
+    phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
+    if not phone_status:
+        phone_status = PhoneStatus(user_id=user_id)
+
+    phone_status.last_latitude = latitude
+    phone_status.last_longitude = longitude
+    phone_status.tracking_active = True
+
+    db.session.add(phone_status)
+    db.session.commit()
+
+    print(f"📡 Updated phone status: ({latitude}, {longitude}) for user {user_id}")
+    return jsonify({"message": "Phone location updated"}), 200
+
+
+
+@app.route("/live-location", methods=["POST"])
+def live_location():
+    data = request.json
+    user_id = data.get("user_id")
+    latitude = data.get("latitude")
+    longitude = data.get("longitude")
+    emails = data.get("emails")
+
+    if not user_id or latitude is None or longitude is None or not emails:
+        return jsonify({"error": "Missing data"}), 400
+
+    # 🧠 Let AI decide if it's unsafe and if an alert should be sent
+    ai_decision = ai_decide_alert(user_id, latitude, longitude)
+
+    if ai_decision == "unsafe":
+        send_email_alert(user_id, emails, latitude, longitude)
+        return jsonify({"message": "Alert sent", "ai_decision": ai_decision})
+    else:
+        return jsonify({"message": "No alert needed", "ai_decision": ai_decision})
 
 
 
@@ -250,6 +294,9 @@ def send_email_alert(user_id, recipient_emails, live_lat=None, live_long=None):
             except Exception as e:
                 print(f"❌ Failed to send email to {email}: {str(e)}")
 
+
+
+
 @app.route("/add-location", methods=["POST"])
 def add_location():
     data = request.json
@@ -268,7 +315,8 @@ def add_location():
             location_name=location_name,
             latitude=latitude,
             longitude=longitude,
-            location_type=location_type
+            location_type=location_type,
+            visible=True  # 🧠 MAKE SURE THIS IS SET
         )
         db.session.add(new_location)
         db.session.commit()
@@ -278,6 +326,9 @@ def add_location():
     except Exception as e:
         print(f"❌ Error saving location: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+
 
 def send_repeated_alerts(user_id, recipient_emails):
     """AI-powered alerts: Only sends emails if AI confirms it's necessary."""
@@ -325,6 +376,8 @@ def send_repeated_alerts(user_id, recipient_emails):
                 # ✅ Update last known position and timestamp
                 last_lat, last_long = current_lat, current_long
                 last_update_time = datetime.utcnow()
+
+
 
 
 
@@ -416,20 +469,35 @@ def ai_decide_alert(user_id, latitude, longitude):
     """AI decides whether an alert should be sent based on location history."""
     with app.app_context():
         # ✅ Check if this location is already classified
-        saved_location = UserLocation.query.filter_by(latitude=latitude, longitude=longitude).first()
+        user_locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
 
-        if saved_location:
-            # If location is already classified, use its classification
-            location_type = saved_location.location_type  
-            print(f"🧠 AI Decision: Using saved classification → {location_type}")
+        if not user_locations:
+            print("⚠️ No visible locations to learn from.")
+            return "no_alert"
+
+        current_coords = (latitude, longitude)
+        closest_location = None
+        min_distance = float("inf")
+
+        for loc in user_locations:
+            loc_coords = (loc.latitude, loc.longitude)
+            distance = geodesic(current_coords, loc_coords).meters
+
+            if distance <= loc.radius and distance < min_distance:
+                closest_location = loc
+                min_distance = distance
+
+        if closest_location:
+            print(f"🧠 AI Decision: Closest match → {closest_location.location_name} ({closest_location.location_type})")
+            location_type = closest_location.location_type
         else:
+            print("❌ AI Decision: No match found. Marking as unknown.")
             location_type = "unknown"
-            print(f"🆕 New location detected. Marking as UNKNOWN temporarily.")
 
-        # ✅ Check if the phone has stayed in the same place for 3 minutes
+        # ✅ Check phone status to confirm it's stationary
         phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
         if phone_status and (phone_status.last_latitude, phone_status.last_longitude) == (latitude, longitude):
-            print("📌 Phone has been in the same location for 3 minutes.")
+            print("📌 Phone is stationary. Logging alert history.")
 
             # ✅ Log the AI decision in `alert_history`
             new_alert = AlertHistory(
