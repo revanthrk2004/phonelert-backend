@@ -9,10 +9,15 @@ import threading  # To run background tasks for AI detection
 import requests  # To send notification to the user's other devices
 # Force Python to recognize 'backend/' as a package
 from sklearn.neighbors import KNeighborsClassifier
-import numpy as np
+
 from sklearn.cluster import DBSCAN
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
 from sklearn.model_selection import train_test_split
+from sklearn.cluster import KMeans
+import numpy as np
+
+
+
 
 
 from flask_mail import Mail, Message  # ✅ Add Flask-Mail
@@ -70,6 +75,41 @@ CORS(app, supports_credentials=True, resources={
 knn_models = {}  # Store per-user trained models
 tracking_users = {}  # ✅ Store tracking status per user
 # ✅ Load API Key from Environment
+
+
+
+
+
+def is_anomalous_location(user_id, latitude, longitude, threshold=100):
+    """
+    Detect if the given location is far from known clusters.
+    threshold: max distance in meters from any cluster center
+    """
+    with app.app_context():
+        history = get_user_location_history(user_id)
+        if not history or len(history) < 3:
+            print("⚠️ Not enough data to perform anomaly detection.")
+            return False  # Not enough to judge
+
+        coords = np.array(history)
+
+        # Train a KMeans model (choose small number of clusters)
+        kmeans = KMeans(n_clusters=min(3, len(coords)))
+        kmeans.fit(coords)
+
+        cluster_centers = kmeans.cluster_centers_
+
+        current_point = (latitude, longitude)
+
+        for center in cluster_centers:
+            center_point = (center[0], center[1])
+            distance = geodesic(current_point, center_point).meters
+
+            if distance < threshold:
+                return False  # It's close to a known cluster
+
+        print(f"🚨 Anomaly Detected! Distance from clusters > {threshold}m")
+        return True  # Too far from all clusters → anomaly
 
 
 
@@ -682,6 +722,9 @@ def ai_decide_alert(user_id, latitude, longitude):
             if matched_cluster:
                 print("🤖 AI match: Frequently visited cluster")
                 location_type = "unsafe"
+            elif is_anomalous_location(user_id, latitude, longitude):  # NEW 🔥
+                print("🚨 AI detected ANOMALY location!")
+                location_type = "anomaly"
             else:
                 print("❌ AI Decision: No match or cluster. Marking as unknown.")
                 location_type = "unknown"
@@ -693,13 +736,38 @@ def ai_decide_alert(user_id, latitude, longitude):
             dist = geodesic(phone_coords, current_coords).meters
             if dist < 20:
                 print("📌 Phone is stationary (within 20m). Logging alert history.")
+                # 👀 Check if current alert might be an anomaly
+                is_anomaly = False
+                reason = None
+
+                # 1. Too many alerts in a short time
+                recent_alerts = AlertHistory.query.filter(
+                    AlertHistory.user_id == user_id,
+                    AlertHistory.timestamp >= datetime.utcnow() - timedelta(minutes=5)
+                ).count()
+
+                if recent_alerts >= 5:
+                    is_anomaly = True
+                    reason = "Too many alerts in short time"
+
+                # 2. Weird hours (1AM to 4AM)
+                hour = datetime.utcnow().hour
+                if 1 <= hour <= 4:
+                    is_anomaly = True
+                    reason = "Alert during late-night hours"
+
+                # 🧠 Final alert log with anomaly detection
                 new_alert = AlertHistory(
                     user_id=user_id,
                     latitude=latitude,
                     longitude=longitude,
                     location_type=location_type,
-                    ai_decision="sent"
+                    ai_decision="sent",
+                    was_anomaly=is_anomaly,
+                    reason=reason
                 )
+
+                
                 db.session.add(new_alert)
                 db.session.commit()
 
