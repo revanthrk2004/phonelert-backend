@@ -721,7 +721,7 @@ def ai_decide_alert(user_id, latitude, longitude):
             if matched_cluster:
                 print("🤖 AI match: Frequently visited cluster")
                 location_type = "unsafe"
-            elif is_anomalous_location(user_id, latitude, longitude):  # 🔥
+            elif is_anomalous_location(user_id, latitude, longitude):
                 print("🚨 AI detected ANOMALY location!")
                 location_type = "anomaly"
             else:
@@ -775,15 +775,15 @@ def ai_decide_alert(user_id, latitude, longitude):
                 db.session.add(new_alert)
                 db.session.commit()
 
-                # ✅ Trigger Push Notification to frontend (unsafe or anomaly)
-                if location_type in ["unsafe", "anomaly"]:
+                # ✅ Trigger Push Notification
+                if location_type in ["unsafe", "anomaly"] and phone_status.expo_push_token:
                     try:
                         import requests
                         requests.post(
                             "https://exp.host/--/api/v2/push/send",
                             headers={"Accept": "application/json", "Content-Type": "application/json"},
                             json={
-                                "to": "ExponentPushToken[sTqcabNlDYjAUeywVEab8F]",  # <- replace later with real user token
+                                "to": phone_status.expo_push_token,
                                 "sound": "default",
                                 "title": "⚠️ PHONELERT ALERT",
                                 "body": f"Phone detected in a {location_type.upper()} area.",
@@ -793,7 +793,9 @@ def ai_decide_alert(user_id, latitude, longitude):
                     except Exception as e:
                         print("❌ Notification failed:", e)
 
-                if alert_count := AlertHistory.query.filter_by(user_id=user_id).count() % 10 == 0:
+                # 🔁 Auto-cluster every 10 alerts
+                alert_count = AlertHistory.query.filter_by(user_id=user_id).count()
+                if alert_count % 10 == 0:
                     print("🤖 Auto-triggering clustering due to 10 alerts.")
                     cluster_and_save_user_locations(user_id)
 
@@ -947,6 +949,25 @@ def list_routes():
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"message": "Phonelert API is Running!"}), 200
+
+
+
+
+
+
+def send_push_notification(push_token, title, body):
+    """Send push notification to the user's device."""
+    message = {
+        'to': push_token,
+        'sound': 'default',
+        'title': title,
+        'body': body,
+        'priority': 'high',
+    }
+
+    response = requests.post("https://exp.host/--/api/v2/push/send", json=message)
+    print("📬 Expo Push Notification Response:", response.status_code, response.text)
+
 
 
 
