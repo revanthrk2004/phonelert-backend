@@ -722,7 +722,7 @@ def ai_decide_alert(user_id, latitude, longitude):
             if matched_cluster:
                 print("🤖 AI match: Frequently visited cluster")
                 location_type = "unsafe"
-            elif is_anomalous_location(user_id, latitude, longitude):  # NEW 🔥
+            elif is_anomalous_location(user_id, latitude, longitude):  # 🔥
                 print("🚨 AI detected ANOMALY location!")
                 location_type = "anomaly"
             else:
@@ -736,27 +736,38 @@ def ai_decide_alert(user_id, latitude, longitude):
             dist = geodesic(phone_coords, current_coords).meters
             if dist < 20:
                 print("📌 Phone is stationary (within 20m). Logging alert history.")
-                # 👀 Check if current alert might be an anomaly
+
+                # 📊 Calculate risk score based on time & location type
+                hour = datetime.utcnow().hour
+                risk_score = 0.0
+
+                if location_type in ["unsafe", "unknown", "anomaly"]:
+                    if 1 <= hour <= 5:
+                        risk_score = 1.0
+                    elif 22 <= hour or hour <= 6:
+                        risk_score = 0.8
+                    elif 9 <= hour <= 17:
+                        risk_score = 0.3
+                    else:
+                        risk_score = 0.5
+                elif location_type == "safe":
+                    risk_score = 0.1
+
+                # Detect anomaly
                 is_anomaly = False
                 reason = None
-
-                # 1. Too many alerts in a short time
                 recent_alerts = AlertHistory.query.filter(
                     AlertHistory.user_id == user_id,
                     AlertHistory.timestamp >= datetime.utcnow() - timedelta(minutes=5)
                 ).count()
-
                 if recent_alerts >= 5:
                     is_anomaly = True
                     reason = "Too many alerts in short time"
-
-                # 2. Weird hours (1AM to 4AM)
-                hour = datetime.utcnow().hour
-                if 1 <= hour <= 4:
+                elif 1 <= hour <= 4:
                     is_anomaly = True
                     reason = "Alert during late-night hours"
 
-                # 🧠 Final alert log with anomaly detection
+                # 🧠 Log full alert with risk score
                 new_alert = AlertHistory(
                     user_id=user_id,
                     latitude=latitude,
@@ -764,19 +775,19 @@ def ai_decide_alert(user_id, latitude, longitude):
                     location_type=location_type,
                     ai_decision="sent",
                     was_anomaly=is_anomaly,
-                    reason=reason
+                    reason=reason,
+                    risk_score=risk_score
                 )
-
-                
                 db.session.add(new_alert)
                 db.session.commit()
 
-                # Auto-trigger clustering every 10 alerts
+                # Trigger clustering every 10 alerts
                 alert_count = AlertHistory.query.filter_by(user_id=user_id).count()
                 if alert_count % 10 == 0:
                     print("🤖 Auto-triggering clustering due to 10 alerts.")
                     cluster_and_save_user_locations(user_id)
 
+                print(f"📊 Risk Score for this alert: {risk_score}")
                 return location_type
 
         return "no_alert"

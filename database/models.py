@@ -49,13 +49,12 @@ class AlertHistory(db.Model):
     location_type = db.Column(db.String(20), nullable=False)
     ai_decision = db.Column(db.String(10), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-
-    # ✅ New fields for anomaly detection
-    was_anomaly = db.Column(db.Boolean, default=False)  # ← If AI flagged it as anomaly
-    reason = db.Column(db.String(200), nullable=True)   # ← Why it was flagged
+    was_anomaly = db.Column(db.Boolean, default=False)
+    reason = db.Column(db.String(100))
+    risk_score = db.Column(db.Float, nullable=True)  # 🔥 NEW COLUMN
 
     def __repr__(self):
-        return f"<AlertHistory user_id={self.user_id}, location_type={self.location_type}, ai_decision={self.ai_decision}, anomaly={self.was_anomaly}>"
+        return f"<AlertHistory user_id={self.user_id}, location_type={self.location_type}, ai_decision={self.ai_decision}, risk_score={self.risk_score}>"
 
 
 class LocationVisitLog(db.Model):
