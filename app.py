@@ -33,7 +33,7 @@ from database.models import PhoneStatus, UserLocation  # ✅ Import UserLocation
 
 from flask_sqlalchemy import SQLAlchemy  # Database to store locations
 from geopy.distance import geodesic  # To calculate distance between two coordinates
-from datetime import datetime  # For timestamping last phone activity
+from datetime import datetime, timedelta  # For timestamping last phone activity
 from database.models import PhoneStatus  # ✅ Import the model
 from flask_migrate import Migrate
 from sqlalchemy import inspect
