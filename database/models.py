@@ -26,6 +26,7 @@ class PhoneStatus(db.Model):
     last_latitude = db.Column(db.Float, nullable=True)
     last_longitude = db.Column(db.Float, nullable=True)
     tracking_active = db.Column(db.Boolean, default=False)  # ✅ Tracks if monitoring is active
+    expo_push_token = db.Column(db.String, nullable=True)  # 🔔 New: For push notifications
 
 
  

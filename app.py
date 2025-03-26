@@ -704,7 +704,6 @@ def ai_decide_alert(user_id, latitude, longitude):
         current_coords = (latitude, longitude)
         buffer = 20  # meters
 
-        # Sort by distance and find closest match within radius
         sorted_locations = sorted(
             user_locations,
             key=lambda loc: geodesic(current_coords, (loc.latitude, loc.longitude)).meters
@@ -729,7 +728,6 @@ def ai_decide_alert(user_id, latitude, longitude):
                 print("❌ AI Decision: No match or cluster. Marking as unknown.")
                 location_type = "unknown"
 
-        # Only log alert if phone is stationary
         phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
         if phone_status:
             phone_coords = (phone_status.last_latitude, phone_status.last_longitude)
@@ -737,10 +735,8 @@ def ai_decide_alert(user_id, latitude, longitude):
             if dist < 20:
                 print("📌 Phone is stationary (within 20m). Logging alert history.")
 
-                # 📊 Calculate risk score based on time & location type
                 hour = datetime.utcnow().hour
                 risk_score = 0.0
-
                 if location_type in ["unsafe", "unknown", "anomaly"]:
                     if 1 <= hour <= 5:
                         risk_score = 1.0
@@ -753,7 +749,6 @@ def ai_decide_alert(user_id, latitude, longitude):
                 elif location_type == "safe":
                     risk_score = 0.1
 
-                # Detect anomaly
                 is_anomaly = False
                 reason = None
                 recent_alerts = AlertHistory.query.filter(
@@ -767,7 +762,6 @@ def ai_decide_alert(user_id, latitude, longitude):
                     is_anomaly = True
                     reason = "Alert during late-night hours"
 
-                # 🧠 Log full alert with risk score
                 new_alert = AlertHistory(
                     user_id=user_id,
                     latitude=latitude,
@@ -781,9 +775,25 @@ def ai_decide_alert(user_id, latitude, longitude):
                 db.session.add(new_alert)
                 db.session.commit()
 
-                # Trigger clustering every 10 alerts
-                alert_count = AlertHistory.query.filter_by(user_id=user_id).count()
-                if alert_count % 10 == 0:
+                # ✅ Trigger Push Notification to frontend (unsafe or anomaly)
+                if location_type in ["unsafe", "anomaly"]:
+                    try:
+                        import requests
+                        requests.post(
+                            "https://exp.host/--/api/v2/push/send",
+                            headers={"Accept": "application/json", "Content-Type": "application/json"},
+                            json={
+                                "to": "ExponentPushToken[sTqcabNlDYjAUeywVEab8F]",  # <- replace later with real user token
+                                "sound": "default",
+                                "title": "⚠️ PHONELERT ALERT",
+                                "body": f"Phone detected in a {location_type.upper()} area.",
+                            }
+                        )
+                        print("📳 Push Notification triggered.")
+                    except Exception as e:
+                        print("❌ Notification failed:", e)
+
+                if alert_count := AlertHistory.query.filter_by(user_id=user_id).count() % 10 == 0:
                     print("🤖 Auto-triggering clustering due to 10 alerts.")
                     cluster_and_save_user_locations(user_id)
 
@@ -937,6 +947,31 @@ def list_routes():
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({"message": "Phonelert API is Running!"}), 200
+
+
+
+
+@app.route('/save-push-token', methods=['POST'])
+def save_push_token():
+    data = request.get_json()
+    user_id = data.get("user_id")
+    token = data.get("expo_push_token")
+
+    if not user_id or not token:
+        return jsonify({"error": "Missing user_id or expo_push_token"}), 400
+
+    with app.app_context():
+        phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
+        if not phone_status:
+            phone_status = PhoneStatus(user_id=user_id)
+
+        phone_status.expo_push_token = token
+        db.session.add(phone_status)
+        db.session.commit()
+
+    print(f"📱 Push token saved for user {user_id}: {token}")
+    return jsonify({"message": "Push token saved successfully!"})
+
 
 
 
