@@ -969,6 +969,18 @@ def send_push_notification(push_token, title, body):
     print("📬 Expo Push Notification Response:", response.status_code, response.text)
 
 
+@app.route('/test-push/<int:user_id>', methods=['GET'])
+def test_push(user_id):
+    phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
+    if not phone_status or not phone_status.expo_push_token:
+        return jsonify({"error": "No push token for user"}), 400
+
+    send_push_notification(
+        phone_status.expo_push_token,
+        "🔧 Manual Test",
+        "This is a test push from backend."
+    )
+    return jsonify({"message": "Push sent"})
 
 
 
