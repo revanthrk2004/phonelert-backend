@@ -863,7 +863,9 @@ def ai_location_check():
                 used_locations.append({
                     "name": loc.location_name,
                     "type": loc.location_type,
-                    "distance": distance
+                    "distance": distance,
+                    "latitude": loc.latitude,
+                    "longitude": loc.longitude
                 })
                 if distance < closest_distance:
                     closest_distance = distance
