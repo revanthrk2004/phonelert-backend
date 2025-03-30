@@ -287,6 +287,91 @@ def predict_location_safety(user_id, latitude, longitude):
     return "safe" if prediction == 1 else "unsafe"
 
 
+
+
+
+
+
+@app.route('/news-sentiment', methods=['GET'])
+def news_sentiment():
+    query = request.args.get('query')
+    if not query:
+        return jsonify({"error": "Missing query"}), 400
+
+    url = "https://bing-news-search1.p.rapidapi.com/news/search"
+    headers = {
+        "X-BingApis-SDK": "true",
+        "X-RapidAPI-Key": os.getenv("RAPIDAPI_KEY"),
+        "X-RapidAPI-Host": "bing-news-search1.p.rapidapi.com"
+    }
+    params = {
+        "q": query,
+        "count": 5,
+        "freshness": "Day",
+        "textFormat": "Raw",
+        "safeSearch": "Off"
+    }
+
+    try:
+        res = requests.get(url, headers=headers, params=params)
+        res.raise_for_status()
+        articles = res.json().get("value", [])
+
+        results = []
+        for article in articles:
+            results.append({
+                "name": article.get("name"),
+                "url": article.get("url"),
+                "description": article.get("description")
+            })
+
+        return jsonify({
+            "query": query,
+            "total_results": len(results),
+            "articles": results
+        })
+
+    except requests.exceptions.RequestException as e:
+        print("❌ API request failed:", str(e))
+        return jsonify({"error": "Failed to fetch news", "details": str(e)}), 500
+
+
+
+
+
+@app.route("/local-news", methods=["GET"])
+def fetch_local_news():
+    city = request.args.get("area") or "London"
+    try:
+        url = f"https://bing-news-search1.p.rapidapi.com/news/search?q={city}&safeSearch=Off&textFormat=Raw"
+
+        headers = {
+            "X-RapidAPI-Key": os.getenv("RAPIDAPI_KEY"),
+            "X-RapidAPI-Host": "bing-news-search1.p.rapidapi.com"
+        }
+
+        response = requests.get(url, headers=headers)
+        data = response.json()
+
+        news = []
+        for item in data.get("value", [])[:5]:  # Top 5 news only
+            news.append({
+                "title": item.get("name"),
+                "summary": item.get("description"),
+                "url": item.get("url"),
+                "published": item.get("datePublished")
+            })
+
+        return jsonify({"city": city, "top_news": news}), 200
+
+    except Exception as e:
+        print("❌ Error fetching news:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+
+
+
 @app.route("/diagnose-ai/<int:user_id>", methods=["GET"])
 def diagnose_ai(user_id):
     with app.app_context():
@@ -1224,5 +1309,7 @@ if os.getenv("ENABLE_AUTO_RETRAIN", "false").lower() == "true":
 
 
 if __name__ == "__main__":
+    print("🔥 Flask app is launching...", flush=True)
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
+
