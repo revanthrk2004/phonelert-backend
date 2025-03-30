@@ -299,6 +299,8 @@ def diagnose_ai(user_id):
         clusters = find_location_clusters(user_id)
 
         accuracy = None
+        mismatches = "N/A"
+
         if user_id in knn_models and "scaler" in knn_models[user_id] and "model" in knn_models[user_id]:
 
             model_data = knn_models[user_id]
@@ -307,7 +309,7 @@ def diagnose_ai(user_id):
             X_scaled = model_data["scaler"].transform(X)
             y_pred = model_data["model"].predict(X_scaled)
             accuracy = accuracy_score(y_true, y_pred)
-            mismatches = sum(a != b for a, b in zip(y_true, y_pred)) if accuracy is not None else "N/A"
+            mismatches = sum(a != b for a, b in zip(y_true, y_pred))
 
         return jsonify({
             "total_locations": len(locations),
@@ -316,9 +318,9 @@ def diagnose_ai(user_id):
             "cluster_count": len(clusters),
             "model_trained": user_id in knn_models,
             
-
-            "accuracy_estimate": round(accuracy, 4) if accuracy is not None else "Model not trained",
-            "mismatches": mismatches
+            "mismatches": mismatches,
+            "accuracy_estimate": round(accuracy, 4) if accuracy is not None else "Model not trained"
+            
         }), 200
 
 
