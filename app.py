@@ -9,11 +9,12 @@ import threading  # To run background tasks for AI detection
 import requests  # To send notification to the user's other devices
 # Force Python to recognize 'backend/' as a package
 from sklearn.neighbors import KNeighborsClassifier
-
+from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import DBSCAN
 from sklearn.metrics import precision_score, recall_score, f1_score, accuracy_score
 from sklearn.model_selection import train_test_split
 from sklearn.cluster import KMeans
+
 import numpy as np
 
 
@@ -42,7 +43,7 @@ from sqlalchemy.exc import OperationalError
 from dotenv import load_dotenv  # ✅ Load environment variables
 from flask_jwt_extended import JWTManager
 from routes.auth_route import auth
-
+from datetime import timezone
 
 # ✅ Load .env file
 load_dotenv()
@@ -64,7 +65,7 @@ mail = Mail(app)  # ✅ Initialize Flask-Mail
 # ✅ Enable CORS for all requests
 CORS(app, supports_credentials=True, resources={
     r"/*": {
-        "origins": "http://localhost:8081",
+        "origins": "https://phonelert-backend.onrender.com",
         "methods": ["GET", "POST", "OPTIONS", "PUT", "DELETE"],
         "allow_headers": ["Content-Type", "Authorization"]
     }
@@ -235,38 +236,88 @@ def get_user_location_history(user_id):
         return [(r.latitude, r.longitude) for r in records]
 
 
-def train_knn_model(user_id):
+
+
+
+
+def train_knn_model(user_id, force=False):  # ✅ Add force argument
     with app.app_context():
-        locations = UserLocation.query.filter_by(user_id=user_id).all()
+        locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
         if not locations:
             print("⚠️ No locations to train for user:", user_id)
             return None
 
-        X = []
-        y = []
+        existing = knn_models.get(user_id)
+        if not force and existing and len(locations) == existing["n_samples"]:
+            print("📦 Skipping retrain — model already up to date")
+            return existing["model"]
 
-        for loc in locations:
-            X.append([loc.latitude, loc.longitude])
-            y.append(1 if loc.location_type == "safe" else 0)
+        X = [[loc.latitude, loc.longitude] for loc in locations]
+        y = [1 if loc.location_type == "safe" else 0 for loc in locations]
+
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
 
         model = KNeighborsClassifier(n_neighbors=3)
-        model.fit(np.array(X), np.array(y))
-        knn_models[user_id] = model
+        model.fit(X_scaled, y)
+
+        knn_models[user_id] = {
+            "model": model,
+            "scaler": scaler,
+            "n_samples": len(locations)  # ✅ Save training size here
+        }
+
         print(f"✅ Trained KNN for user {user_id} on {len(X)} locations.")
         return model
+
 
 def predict_location_safety(user_id, latitude, longitude):
     if user_id not in knn_models:
         print("🧠 No model found. Training KNN on the fly...")
-        model = train_knn_model(user_id)
-        if not model:
+        train_knn_model(user_id)
+        if user_id not in knn_models:
             return "unknown"
-    else:
-        model = knn_models[user_id]
 
-    prediction = model.predict([[latitude, longitude]])[0]
+    model_data = knn_models[user_id]
+    model = model_data["model"]
+    scaler = model_data["scaler"]
+
+    coords_scaled = scaler.transform([[latitude, longitude]])
+    prediction = model.predict(coords_scaled)[0]
     return "safe" if prediction == 1 else "unsafe"
 
+
+@app.route("/diagnose-ai/<int:user_id>", methods=["GET"])
+def diagnose_ai(user_id):
+    with app.app_context():
+        locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
+        if not locations:
+            return jsonify({"error": "No data to evaluate"}), 400
+
+        safe_count = sum(1 for loc in locations if loc.location_type == "safe")
+        unsafe_count = sum(1 for loc in locations if loc.location_type == "unsafe")
+        clusters = find_location_clusters(user_id)
+
+        accuracy = None
+        if user_id in knn_models and "scaler" in knn_models[user_id] and "model" in knn_models[user_id]:
+
+            model_data = knn_models[user_id]
+            X = [[loc.latitude, loc.longitude] for loc in locations]
+            y_true = [1 if loc.location_type == "safe" else 0 for loc in locations]
+            X_scaled = model_data["scaler"].transform(X)
+            y_pred = model_data["model"].predict(X_scaled)
+            accuracy = accuracy_score(y_true, y_pred)
+
+        return jsonify({
+            "total_locations": len(locations),
+            "safe_locations": safe_count,
+            "unsafe_locations": unsafe_count,
+            "cluster_count": len(clusters),
+            "model_trained": user_id in knn_models,
+            "mismatches": sum(a != b for a, b in zip(y_true, y_pred)),
+
+            "accuracy_estimate": round(accuracy, 4) if accuracy is not None else "Model not trained"
+        }), 200
 
 
 @app.route("/evaluate-classification", methods=["GET"])
@@ -530,7 +581,7 @@ def add_location():
             existing_location.visible = True
             existing_location.location_name = location_name
             existing_location.location_type = location_type
-            existing_location.timestamp = datetime.utcnow()
+            existing_location.timestamp = datetime.now(timezone.utc)
             print(f"♻️ Reactivated location: {location_name} for user {user_id}")
         else:
             # 🆕 Add new location
@@ -541,7 +592,7 @@ def add_location():
                 longitude=longitude,
                 location_type=location_type,
                 radius=50,
-                timestamp=datetime.utcnow(),
+                timestamp=datetime.now(timezone.utc),
                 visible=True
             )
             db.session.add(new_location)
@@ -574,7 +625,7 @@ def send_repeated_alerts(user_id, recipient_emails):
             return
 
         last_lat, last_long = phone_status.last_latitude, phone_status.last_longitude
-        last_update_time = datetime.utcnow()
+        last_update_time = datetime.now(timezone.utc)
 
         while tracking_users.get(user_id, {}).get("active", False):
             time.sleep(180)  # ✅ Wait for 3 minutes
@@ -602,7 +653,7 @@ def send_repeated_alerts(user_id, recipient_emails):
 
                 # ✅ Update last known position and timestamp
                 last_lat, last_long = current_lat, current_long
-                last_update_time = datetime.utcnow()
+                last_update_time = datetime.now(timezone.utc)
 
 
 
@@ -693,69 +744,81 @@ def monitor_phone_location(user_id):
 
 
 def ai_decide_alert(user_id, latitude, longitude):
-    """AI decides whether an alert should be sent based on location history."""
     with app.app_context():
         user_locations = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
-
         if not user_locations:
             print("⚠️ No visible locations to learn from.")
             return "no_alert"
 
         current_coords = (latitude, longitude)
         buffer = 20  # meters
+        hour = datetime.now(timezone.utc).hour
 
+        # 1. Match saved locations
         sorted_locations = sorted(
             user_locations,
             key=lambda loc: geodesic(current_coords, (loc.latitude, loc.longitude)).meters
         )
 
-        location_type = "unknown"
+        closest_location = None
         for loc in sorted_locations:
             dist = geodesic(current_coords, (loc.latitude, loc.longitude)).meters
-            if dist <= (loc.radius + buffer):
-                print(f"🧠 AI Decision: Closest match → {loc.location_name} ({loc.location_type})")
-                location_type = loc.location_type
+            if dist <= loc.radius + buffer:
+                closest_location = loc
                 break
-        else:
-            matched_cluster, center = is_near_cluster(user_id, latitude, longitude)
-            if matched_cluster:
-                print("🤖 AI match: Frequently visited cluster")
-                location_type = "unsafe"
-            elif is_anomalous_location(user_id, latitude, longitude):
-                print("🚨 AI detected ANOMALY location!")
-                location_type = "anomaly"
-            else:
-                print("❌ AI Decision: No match or cluster. Marking as unknown.")
-                location_type = "unknown"
 
+        # 2. AI Location type logic
+        if closest_location:
+            location_type = closest_location.location_type
+            print(f"🧠 Closest match → {closest_location.location_name} ({location_type})")
+        else:
+            matched_cluster, _ = is_near_cluster(user_id, latitude, longitude)
+            if matched_cluster:
+                location_type = "unsafe"
+                print("🤖 Near learned cluster")
+            elif is_anomalous_location(user_id, latitude, longitude):
+                location_type = "anomaly"
+                print("🚨 AI detected anomaly")
+            else:
+                location_type = "unknown"
+                print("❌ No matches — location marked unknown")
+
+        # 3. Suppress duplicate alerts (same spot in 10 mins)
+        recent_alerts = AlertHistory.query.filter(
+            AlertHistory.user_id == user_id,
+            AlertHistory.latitude == latitude,
+            AlertHistory.longitude == longitude,
+            AlertHistory.timestamp >= datetime.now(timezone.utc) - timedelta(minutes=10)
+        ).count()
+        if recent_alerts >= 2:
+            print("🛑 Duplicate alert suppressed")
+            return "no_alert"
+
+        # 4. Risk Score (based on time)
+        risk_score = 0.1
+        if location_type in ["unsafe", "unknown", "anomaly"]:
+            if 1 <= hour <= 5:
+                risk_score = 1.0
+            elif 22 <= hour or hour <= 6:
+                risk_score = 0.8
+            elif 9 <= hour <= 17:
+                risk_score = 0.3
+            else:
+                risk_score = 0.5
+
+        # 5. Save alert only if phone is stationary
         phone_status = PhoneStatus.query.filter_by(user_id=user_id).first()
         if phone_status:
             phone_coords = (phone_status.last_latitude, phone_status.last_longitude)
-            dist = geodesic(phone_coords, current_coords).meters
-            if dist < 20:
-                print("📌 Phone is stationary (within 20m). Logging alert history.")
-
-                hour = datetime.utcnow().hour
-                risk_score = 0.0
-                if location_type in ["unsafe", "unknown", "anomaly"]:
-                    if 1 <= hour <= 5:
-                        risk_score = 1.0
-                    elif 22 <= hour or hour <= 6:
-                        risk_score = 0.8
-                    elif 9 <= hour <= 17:
-                        risk_score = 0.3
-                    else:
-                        risk_score = 0.5
-                elif location_type == "safe":
-                    risk_score = 0.1
-
+            if geodesic(phone_coords, current_coords).meters < 20:
                 is_anomaly = False
                 reason = None
-                recent_alerts = AlertHistory.query.filter(
+                recent_count = AlertHistory.query.filter(
                     AlertHistory.user_id == user_id,
-                    AlertHistory.timestamp >= datetime.utcnow() - timedelta(minutes=5)
+                    AlertHistory.timestamp >= datetime.now(timezone.utc) - timedelta(minutes=5)
                 ).count()
-                if recent_alerts >= 5:
+
+                if recent_count >= 5:
                     is_anomaly = True
                     reason = "Too many alerts in short time"
                 elif 1 <= hour <= 4:
@@ -775,10 +838,8 @@ def ai_decide_alert(user_id, latitude, longitude):
                 db.session.add(new_alert)
                 db.session.commit()
 
-                # ✅ Trigger Push Notification
                 if location_type in ["unsafe", "anomaly"] and phone_status.expo_push_token:
                     try:
-                        import requests
                         requests.post(
                             "https://exp.host/--/api/v2/push/send",
                             headers={"Accept": "application/json", "Content-Type": "application/json"},
@@ -789,20 +850,20 @@ def ai_decide_alert(user_id, latitude, longitude):
                                 "body": f"Phone detected in a {location_type.upper()} area.",
                             }
                         )
-                        print("📳 Push Notification triggered.")
+                        print("📳 Push sent.")
                     except Exception as e:
-                        print("❌ Notification failed:", e)
+                        print("❌ Push failed:", e)
 
-                # 🔁 Auto-cluster every 10 alerts
-                alert_count = AlertHistory.query.filter_by(user_id=user_id).count()
-                if alert_count % 10 == 0:
-                    print("🤖 Auto-triggering clustering due to 10 alerts.")
+                alert_total = AlertHistory.query.filter_by(user_id=user_id).count()
+                if alert_total % 10 == 0:
+                    print("🤖 Clustering triggered (10 alerts)")
                     cluster_and_save_user_locations(user_id)
 
-                print(f"📊 Risk Score for this alert: {risk_score}")
+                print(f"📊 Risk Score: {risk_score}")
                 return location_type
 
         return "no_alert"
+
 
 
 @app.route('/get-locations/<int:user_id>', methods=['GET'])
@@ -897,12 +958,9 @@ def ai_location_check():
 
 
 def retrain_model_for_user(user_id):
-    # Get all visible locations again
-    visible_locs = UserLocation.query.filter_by(user_id=user_id, visible=True).all()
-    # Replace this with your AI model's actual retraining logic
-    print(f"🧠 [Retrain] Rebuilding model for {len(visible_locs)} locations...")
-    # You can call your training logic here
-    # e.g., train_model(user_id, visible_locs)
+    print(f"🧠 [Retrain] Forcing model retrain for user {user_id}")
+    train_knn_model(user_id, force=True)
+
 
 
 
@@ -1062,9 +1120,10 @@ def evaluate_model(user_id):
         if user_id not in knn_models:
             train_knn_model(user_id)
 
-        model = knn_models.get(user_id)
-        if not model:
+        model_data = knn_models.get(user_id)
+        if not model_data:
             return jsonify({"error": "Model not trained"}), 500
+        model = model_data["model"]
 
         y_pred = model.predict(X)
 
