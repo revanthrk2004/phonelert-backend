@@ -603,7 +603,12 @@ def add_location():
             print(f"✅ New location added: {location_name} for user {user_id}")
 
         db.session.commit()
-        return jsonify({"message": "Location saved successfully"}), 200
+
+         # ✅ AUTO-TRAIN AI MODEL
+        train_knn_model(user_id, force=True)
+        print(f"🤖 Auto-trained KNN model for user {user_id}")
+
+        return jsonify({"message": "Location saved and AI model retrained"}), 200
 
     except Exception as e:
         print(f"❌ Error saving location: {e}")
@@ -1174,6 +1179,34 @@ def evaluate_ai_model():
         }
 
         return jsonify(results)
+
+
+@app.route("/retrain-all", methods=["GET"])
+def retrain_all_models():
+    from database.models import UserLocation
+    from sqlalchemy import distinct
+
+    with app.app_context():
+        try:
+            # Get unique user_ids who have at least 1 location
+            user_ids = db.session.query(distinct(UserLocation.user_id)).all()
+            user_ids = [uid[0] for uid in user_ids]
+
+            retrained = []
+            for user_id in user_ids:
+                train_knn_model(user_id, force=True)
+                retrained.append(user_id)
+                print(f"🔄 Retrained model for user {user_id}")
+
+            return jsonify({
+                "message": "✅ Models retrained",
+                "users_retrained": retrained
+            }), 200
+
+        except Exception as e:
+            print(f"❌ Error during bulk retrain: {e}")
+            return jsonify({"error": str(e)}), 500
+
 
 
 if __name__ == "__main__":
