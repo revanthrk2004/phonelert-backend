@@ -309,7 +309,7 @@ def diagnose_ai(user_id):
             X_scaled = model_data["scaler"].transform(X)
             y_pred = model_data["model"].predict(X_scaled)
             accuracy = accuracy_score(y_true, y_pred)
-            mismatches = sum(a != b for a, b in zip(y_true, y_pred))
+            mismatches = int(sum(a != b for a, b in zip(y_true, y_pred))) if accuracy is not None else "N/A"
 
         return jsonify({
             "total_locations": len(locations),
