@@ -1208,6 +1208,18 @@ def retrain_all_models():
             return jsonify({"error": str(e)}), 500
 
 
+def auto_retrain_loop():
+    while True:
+        time.sleep(900)  # Wait 1 hour
+        with app.app_context():
+            print("🔁 [AUTO] Running model retraining for all users...")
+            retrain_all_models()
+            print(f"✅ [AUTO] Models retrained at {datetime.now(timezone.utc)} UTC")
+# Optional: Only start this if enabled
+if os.getenv("ENABLE_AUTO_RETRAIN", "false").lower() == "true":
+    threading.Thread(target=auto_retrain_loop, daemon=True).start()
+    print("🧠 Auto retrain loop started.")
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
