@@ -1105,10 +1105,11 @@ def cluster_user_locations(user_id):
 def trigger_clustering(user_id):
     try:
         cluster_and_save_user_locations(user_id)
-        return jsonify({"message": f"✅ Clustering triggered for user {user_id}"}), 200
+        return jsonify({"message": "✅ Zones Updated"}), 200  # 🔧 Matched frontend-friendly response
     except Exception as e:
         print(f"❌ Clustering failed: {str(e)}")
         return jsonify({"error": str(e)}), 500
+
 
 
 @app.route("/evaluate-model/<int:user_id>", methods=["GET"])
