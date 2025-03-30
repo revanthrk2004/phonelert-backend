@@ -1096,9 +1096,10 @@ def test_email():
 def cluster_user_locations(user_id):
     try:
         cluster_and_save_user_locations(user_id)
-        return jsonify({"message": f"✅ Clustering done for user {user_id}"}), 200
+        return jsonify({"message": "✅ Zones Updated"}), 200  # 🔧 Unified message for frontend
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 @app.route("/cluster-locations/<int:user_id>", methods=["GET"])
 def trigger_clustering(user_id):
