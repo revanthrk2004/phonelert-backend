@@ -298,29 +298,25 @@ def news_sentiment():
     if not query:
         return jsonify({"error": "Missing query"}), 400
 
-    url = "https://bing-news-search1.p.rapidapi.com/news/search"
+    url = os.getenv("NEWS_API_URL")
     headers = {
-        "X-BingApis-SDK": "true",
         "X-RapidAPI-Key": os.getenv("RAPIDAPI_KEY"),
-        "X-RapidAPI-Host": "bing-news-search1.p.rapidapi.com"
+        "X-RapidAPI-Host": os.getenv("RAPIDAPI_HOST")
     }
     params = {
-        "q": query,
-        "count": 5,
-        "freshness": "Day",
-        "textFormat": "Raw",
-        "safeSearch": "Off"
+        "keyword": query,
+        "size": 5
     }
 
     try:
         res = requests.get(url, headers=headers, params=params)
         res.raise_for_status()
-        articles = res.json().get("value", [])
+        articles = res.json().get("results", [])
 
         results = []
         for article in articles:
             results.append({
-                "name": article.get("name"),
+                "title": article.get("title"),
                 "url": article.get("url"),
                 "description": article.get("description")
             })
@@ -329,37 +325,39 @@ def news_sentiment():
             "query": query,
             "total_results": len(results),
             "articles": results
-        })
+        }), 200
 
     except requests.exceptions.RequestException as e:
-        print("❌ API request failed:", str(e))
-        return jsonify({"error": "Failed to fetch news", "details": str(e)}), 500
-
-
-
+        print("❌ News API failed:", str(e))
+        return jsonify({"error": "News API failed", "details": str(e)}), 500
 
 
 @app.route("/local-news", methods=["GET"])
 def fetch_local_news():
     city = request.args.get("area") or "London"
+
+    url = os.getenv("NEWS_API_URL")
+    headers = {
+        "X-RapidAPI-Key": os.getenv("RAPIDAPI_KEY"),
+        "X-RapidAPI-Host": os.getenv("RAPIDAPI_HOST")
+    }
+    params = {
+        "keyword": city,
+        "size": 5
+    }
+
     try:
-        url = f"https://bing-news-search1.p.rapidapi.com/news/search?q={city}&safeSearch=Off&textFormat=Raw"
-
-        headers = {
-            "X-RapidAPI-Key": os.getenv("RAPIDAPI_KEY"),
-            "X-RapidAPI-Host": "bing-news-search1.p.rapidapi.com"
-        }
-
-        response = requests.get(url, headers=headers)
-        data = response.json()
+        res = requests.get(url, headers=headers, params=params)
+        res.raise_for_status()
+        articles = res.json().get("results", [])
 
         news = []
-        for item in data.get("value", [])[:5]:  # Top 5 news only
+        for item in articles:
             news.append({
-                "title": item.get("name"),
+                "title": item.get("title"),
                 "summary": item.get("description"),
                 "url": item.get("url"),
-                "published": item.get("datePublished")
+                "published": item.get("publishedAt", "N/A")
             })
 
         return jsonify({"city": city, "top_news": news}), 200
@@ -367,7 +365,6 @@ def fetch_local_news():
     except Exception as e:
         print("❌ Error fetching news:", e)
         return jsonify({"error": str(e)}), 500
-
 
 
 
