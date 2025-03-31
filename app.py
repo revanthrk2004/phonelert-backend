@@ -298,7 +298,7 @@ def news_sentiment():
     if not query:
         return jsonify({"error": "Missing query"}), 400
 
-    url = os.getenv("NEWS_API_URL")
+    url = "https://bing-search-apis.p.rapidapi.com/api/rapid/web_search"
     headers = {
         "X-RapidAPI-Key": os.getenv("RAPIDAPI_KEY"),
         "X-RapidAPI-Host": os.getenv("RAPIDAPI_HOST")
@@ -311,13 +311,13 @@ def news_sentiment():
     try:
         res = requests.get(url, headers=headers, params=params)
         res.raise_for_status()
-        articles = res.json().get("results", [])
+        articles = res.json().get("data", {}).get("items", [])
 
         results = []
         for article in articles:
             results.append({
                 "title": article.get("title"),
-                "url": article.get("url"),
+                "url": article.get("link"),
                 "description": article.get("description")
             })
 
@@ -336,7 +336,7 @@ def news_sentiment():
 def fetch_local_news():
     city = request.args.get("area") or "London"
 
-    url = os.getenv("NEWS_API_URL")
+    url = "https://bing-search-apis.p.rapidapi.com/api/rapid/web_search"
     headers = {
         "X-RapidAPI-Key": os.getenv("RAPIDAPI_KEY"),
         "X-RapidAPI-Host": os.getenv("RAPIDAPI_HOST")
@@ -349,14 +349,14 @@ def fetch_local_news():
     try:
         res = requests.get(url, headers=headers, params=params)
         res.raise_for_status()
-        articles = res.json().get("results", [])
+        articles = res.json().get("data", {}).get("items", [])
 
         news = []
         for item in articles:
             news.append({
                 "title": item.get("title"),
                 "summary": item.get("description"),
-                "url": item.get("url"),
+                "url": item.get("link"),
                 "published": item.get("publishedAt", "N/A")
             })
 
@@ -365,7 +365,6 @@ def fetch_local_news():
     except Exception as e:
         print("❌ Error fetching news:", e)
         return jsonify({"error": str(e)}), 500
-
 
 
 
