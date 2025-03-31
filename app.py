@@ -335,30 +335,34 @@ def news_sentiment():
 @app.route("/local-news", methods=["GET"])
 def fetch_local_news():
     city = request.args.get("area") or "London"
-
-    url = "https://bing-search-apis.p.rapidapi.com/api/rapid/web_search"
-    headers = {
-        "X-RapidAPI-Key": os.getenv("RAPIDAPI_KEY"),
-        "X-RapidAPI-Host": os.getenv("RAPIDAPI_HOST")
-    }
-    params = {
-    "keyword": f"{city} crime",
-    "size": 10
-    }
-
     try:
-        res = requests.get(url, headers=headers, params=params)
-        res.raise_for_status()
-        articles = res.json().get("results", [])
+        url = "https://bing-search-apis.p.rapidapi.com/api/rapid/web_search"
+        headers = {
+            "X-RapidAPI-Key": os.getenv("RAPIDAPI_KEY"),
+            "X-RapidAPI-Host": os.getenv("RAPIDAPI_HOST")
+        }
+        params = {
+            "keyword": city,
+            "size": 10
+        }
 
+        response = requests.get(url, headers=headers, params=params)
+        response.raise_for_status()
+        data = response.json()
+
+        keywords = ["theft", "robbery", "crime", "unsafe", "danger", "snatching", "stolen", "mugging"]
         news = []
-        for item in articles[:5]:  # Just take top 5 relevant ones
-            news.append({
-                "title": item.get("title"),
-                "summary": item.get("description"),
-                "url": item.get("url"),
-                "published": item.get("publishedAt", "N/A")
-            })
+
+        for item in data.get("results", []):
+            title = item.get("title", "").lower()
+            desc = item.get("description", "").lower()
+            if any(word in title or word in desc for word in keywords):
+                news.append({
+                    "title": item.get("title"),
+                    "summary": item.get("description"),
+                    "url": item.get("url"),
+                    "published": item.get("publishedAt", "N/A")
+                })
 
         return jsonify({"city": city, "top_news": news}), 200
 
