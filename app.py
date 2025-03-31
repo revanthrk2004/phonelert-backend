@@ -342,28 +342,28 @@ def fetch_local_news():
         "X-RapidAPI-Host": os.getenv("RAPIDAPI_HOST")
     }
     params = {
-        "keyword": city,
-        "size": 5
+        "keyword": f"{city} theft OR robbery OR danger OR unsafe OR snatching OR crime",
+        "size": 10
     }
 
     try:
         res = requests.get(url, headers=headers, params=params)
         res.raise_for_status()
-        articles = res.json().get("data", {}).get("items", [])
+        articles = res.json().get("results", [])
 
         news = []
-        for item in articles:
+        for item in articles[:5]:  # Just take top 5 relevant ones
             news.append({
                 "title": item.get("title"),
                 "summary": item.get("description"),
-                "url": item.get("link"),
+                "url": item.get("url"),
                 "published": item.get("publishedAt", "N/A")
             })
 
         return jsonify({"city": city, "top_news": news}), 200
 
     except Exception as e:
-        print("❌ Error fetching news:", e)
+        print("❌ Error fetching filtered local news:", e)
         return jsonify({"error": str(e)}), 500
 
 
