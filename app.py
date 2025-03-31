@@ -342,8 +342,8 @@ def fetch_local_news():
         "X-RapidAPI-Host": os.getenv("RAPIDAPI_HOST")
     }
     params = {
-        "keyword": f"{city} theft OR robbery OR danger OR unsafe OR snatching OR crime",
-        "size": 10
+    "keyword": f"{city} crime",
+    "size": 10
     }
 
     try:
