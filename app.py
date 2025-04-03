@@ -877,16 +877,18 @@ def ai_decide_alert(user_id, latitude, longitude):
                 location_type = "unknown"
                 print("❌ No matches — location marked unknown")
 
-        # 3. Suppress duplicate alerts (same spot in 10 mins)
-        recent_alerts = AlertHistory.query.filter(
-            AlertHistory.user_id == user_id,
-            AlertHistory.latitude == latitude,
-            AlertHistory.longitude == longitude,
-            AlertHistory.timestamp >= datetime.now(timezone.utc) - timedelta(minutes=10)
-        ).count()
-        if recent_alerts >= 2:
-            print("🛑 Duplicate alert suppressed")
-            return "no_alert"
+        # 3. Suppress duplicate alerts (same spot in 10 mins), but NOT if user marked as unsafe
+        if location_type != "unsafe":
+            recent_alerts = AlertHistory.query.filter(
+                AlertHistory.user_id == user_id,
+                AlertHistory.latitude == latitude,
+                AlertHistory.longitude == longitude,
+                AlertHistory.timestamp >= datetime.now(timezone.utc) - timedelta(minutes=10)
+            ).count()
+            if recent_alerts >= 2:
+                print("🛑 Duplicate alert suppressed (not unsafe area)")
+                return "no_alert"
+
 
         # 4. Risk Score (based on time)
         risk_score = 0.1
