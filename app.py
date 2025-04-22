@@ -32,6 +32,8 @@ from database.db_manager import create_app, db
 from routes.auth_route import auth
 from database.models import PhoneStatus, UserLocation  # ✅ Import UserLocation
 
+from geopy.geocoders import Nominatim
+
 from flask_sqlalchemy import SQLAlchemy  # Database to store locations
 from geopy.distance import geodesic  # To calculate distance between two coordinates
 from datetime import datetime, timedelta  # For timestamping last phone activity
@@ -334,40 +336,50 @@ def news_sentiment():
 
 @app.route("/local-news", methods=["GET"])
 def fetch_local_news():
-    city = request.args.get("area") or "London"
+    city = request.args.get("area", "London")
+    keywords = ["robbery", "theft", "crime", "unsafe", "danger", "stabbing", "mugging"]
+    api_key = "921a2df712f073f9c8a891154a9c9ba1"
+
     try:
-        url = "https://bing-search-apis.p.rapidapi.com/api/rapid/web_search"
-        headers = {
-            "X-RapidAPI-Key": os.getenv("RAPIDAPI_KEY"),
-            "X-RapidAPI-Host": os.getenv("RAPIDAPI_HOST")
-        }
-        params = {
-            "keyword": city,
-            "size": 10
-        }
+        url = f"https://gnews.io/api/v4/search?q={' OR '.join(keywords)}+{city}&lang=en&token={api_key}"
+        res = requests.get(url)
+        res.raise_for_status()
+        articles = res.json().get("articles", [])
 
-        response = requests.get(url, headers=headers, params=params)
-        response.raise_for_status()
-        data = response.json()
+        flagged = []
+        geolocator = Nominatim(user_agent="phonelert-news-locator")
 
-        keywords = ["theft", "robbery", "crime", "unsafe", "danger", "snatching", "stolen", "mugging"]
-        news = []
-
-        for item in data.get("results", []):
-            title = item.get("title", "").lower()
-            desc = item.get("description", "").lower()
-            if any(word in title or word in desc for word in keywords):
-                news.append({
-                    "title": item.get("title"),
-                    "summary": item.get("description"),
-                    "url": item.get("url"),
-                    "published": item.get("publishedAt", "N/A")
+        for article in articles:
+            title = article.get("title", "")
+            guess = title.split("in")[-1].strip().split(" ")[0:2]
+            location_str = " ".join(guess) + f", {city}"
+            loc = geolocator.geocode(location_str)
+            if loc:
+                flagged.append({
+                    "title": title,
+                    "location": location_str,
+                    "lat": loc.latitude,
+                    "lon": loc.longitude
                 })
 
-        return jsonify({"city": city, "top_news": news}), 200
+                # Save to DB (hidden from UI)
+                unsafe = UserLocation(
+                    user_id=0,
+                    location_name=location_str,
+                    latitude=loc.latitude,
+                    longitude=loc.longitude,
+                    location_type="unsafe",
+                    visible=False,
+                    radius=50,
+                    timestamp=datetime.now(timezone.utc)
+                )
+                db.session.add(unsafe)
+
+        db.session.commit()
+        return jsonify({"city": city, "flagged": flagged}), 200
 
     except Exception as e:
-        print("❌ Error fetching filtered local news:", e)
+        print("❌ News fetch failed:", str(e))
         return jsonify({"error": str(e)}), 500
 
 
@@ -878,14 +890,13 @@ def ai_decide_alert(user_id, latitude, longitude):
                 print("❌ No matches — location marked unknown")
 
         # 3. Suppress duplicate alerts (same spot in 10 mins), but NOT if user marked as unsafe
-        if location_type != "unsafe":
             recent_alerts = AlertHistory.query.filter(
                 AlertHistory.user_id == user_id,
                 AlertHistory.latitude == latitude,
                 AlertHistory.longitude == longitude,
                 AlertHistory.timestamp >= datetime.now(timezone.utc) - timedelta(minutes=10)
             ).count()
-            if recent_alerts >= 2:
+            if recent_alerts >= 100:
                 print("🛑 Duplicate alert suppressed (not unsafe area)")
                 return "no_alert"
 
@@ -1308,6 +1319,24 @@ def auto_retrain_loop():
 if os.getenv("ENABLE_AUTO_RETRAIN", "false").lower() == "true":
     threading.Thread(target=auto_retrain_loop, daemon=True).start()
     print("🧠 Auto retrain loop started.")
+
+
+def auto_news_update_loop():
+    from sqlalchemy.orm import scoped_session
+    while True:
+        time.sleep(3600)  # Wait 1 hour
+        with app.app_context():
+            try:
+                print("📰 [AUTO] Running news update...")
+
+                # Replace 'London' with major city or loop through user areas
+                city = "London"
+                response = app.test_client().get(f"/local-news?area={city}")
+                print(f"✅ News refresh for {city}: {response.status_code}")
+
+            except Exception as e:
+                print("❌ News fetch loop error:", str(e))
+
 
 
 if __name__ == "__main__":
