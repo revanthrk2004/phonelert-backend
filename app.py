@@ -338,10 +338,11 @@ def news_sentiment():
 def fetch_local_news():
     city = request.args.get("area", "London")
     keywords = ["robbery", "theft", "crime", "unsafe", "danger", "stabbing", "mugging"]
-    api_key = "921a2df712f073f9c8a891154a9c9ba1"
+    GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
 
     try:
-        url = f"https://gnews.io/api/v4/search?q={' OR '.join(keywords)}+{city}&lang=en&token={api_key}"
+        query = " OR ".join([f'"{word} in {city}"' for word in keywords])
+        url = f"https://gnews.io/api/v4/search?q={query}&lang=en&max=10&token={GNEWS_API_KEY}"
         res = requests.get(url)
         res.raise_for_status()
         articles = res.json().get("articles", [])
@@ -362,7 +363,6 @@ def fetch_local_news():
                     "lon": loc.longitude
                 })
 
-                # Save to DB (hidden from UI)
                 unsafe = UserLocation(
                     user_id=0,
                     location_name=location_str,
@@ -381,6 +381,7 @@ def fetch_local_news():
     except Exception as e:
         print("❌ News fetch failed:", str(e))
         return jsonify({"error": str(e)}), 500
+
 
 
 
