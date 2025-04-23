@@ -33,6 +33,7 @@ from routes.auth_route import auth
 from database.models import PhoneStatus, UserLocation  # ✅ Import UserLocation
 
 from geopy.geocoders import Nominatim
+from geopy.exc import GeocoderTimedOut
 
 from flask_sqlalchemy import SQLAlchemy  # Database to store locations
 from geopy.distance import geodesic  # To calculate distance between two coordinates
@@ -81,6 +82,19 @@ tracking_users = {}  # ✅ Store tracking status per user
 
 
 
+
+def geocode_with_retry(geolocator, location_str, retries=3, delay=2):
+    for i in range(retries):
+        try:
+            return geolocator.geocode(location_str, timeout=5)
+        except GeocoderTimedOut:
+            print(f"⏳ Timeout on '{location_str}', retrying in {delay}s...")
+            time.sleep(delay)
+            delay *= 2  # Exponential backoff
+        except Exception as e:
+            print(f"❌ Geocoding failed: {e}")
+            break
+    return None
 
 
 def is_anomalous_location(user_id, latitude, longitude, threshold=100):
@@ -300,27 +314,21 @@ def news_sentiment():
     if not query:
         return jsonify({"error": "Missing query"}), 400
 
-    url = "https://bing-search-apis.p.rapidapi.com/api/rapid/web_search"
-    headers = {
-        "X-RapidAPI-Key": os.getenv("RAPIDAPI_KEY"),
-        "X-RapidAPI-Host": os.getenv("RAPIDAPI_HOST")
-    }
-    params = {
-        "keyword": query,
-        "size": 5
-    }
+    GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
+    url = f"https://gnews.io/api/v4/search?q={query}&lang=en&token={GNEWS_API_KEY}"
 
     try:
-        res = requests.get(url, headers=headers, params=params)
+        res = requests.get(url)
         res.raise_for_status()
-        articles = res.json().get("data", {}).get("items", [])
+        articles = res.json().get("articles", [])
 
         results = []
         for article in articles:
             results.append({
                 "title": article.get("title"),
-                "url": article.get("link"),
-                "description": article.get("description")
+                "url": article.get("url"),
+                "description": article.get("description"),
+                "publishedAt": article.get("publishedAt")
             })
 
         return jsonify({
@@ -354,7 +362,8 @@ def fetch_local_news():
             title = article.get("title", "")
             guess = title.split("in")[-1].strip().split(" ")[0:2]
             location_str = " ".join(guess) + f", {city}"
-            loc = geolocator.geocode(location_str)
+            time.sleep(1)
+            loc = geocode_with_retry(geolocator, location_str, retries=3, delay=2)
             if loc:
                 flagged.append({
                     "title": title,
@@ -362,6 +371,17 @@ def fetch_local_news():
                     "lat": loc.latitude,
                     "lon": loc.longitude
                 })
+
+                # ✅ Check if already exists to prevent duplicates
+                existing = UserLocation.query.filter_by(
+                    user_id=0,
+                    latitude=loc.latitude,
+                    longitude=loc.longitude
+                ).first()
+
+                if existing:
+                    print(f"⏩ Skipping duplicate location: {location_str}")
+                    continue
 
                 unsafe = UserLocation(
                     user_id=0,
@@ -514,12 +534,17 @@ def live_location():
     latitude = data.get("latitude")
     longitude = data.get("longitude")
     emails = data.get("emails")
-
+    force_alert = data.get("force_alert", False)  # 🆕 NEW LINE
+    
     if not user_id or latitude is None or longitude is None or not emails:
         return jsonify({"error": "Missing data"}), 400
 
     # 🧠 Let AI decide if it's unsafe and if an alert should be sent
-    ai_decision = ai_decide_alert(user_id, latitude, longitude)
+    if force_alert:
+        ai_decision = "unsafe"  # 🔥 Force it for shake case
+        print("🛑 Force alert enabled — skipping AI checks!")
+    else:
+        ai_decision = ai_decide_alert(user_id, latitude, longitude)
 
     if ai_decision == "unsafe":
         send_email_alert(user_id, emails, latitude, longitude)
