@@ -374,7 +374,7 @@ def fetch_local_news():
 
                 # ✅ Check if already exists to prevent duplicates
                 existing = UserLocation.query.filter_by(
-                    user_id=0,
+                    user_id=11,
                     latitude=loc.latitude,
                     longitude=loc.longitude
                 ).first()
@@ -384,7 +384,7 @@ def fetch_local_news():
                     continue
 
                 unsafe = UserLocation(
-                    user_id=0,
+                    user_id=11,
                     location_name=location_str,
                     latitude=loc.latitude,
                     longitude=loc.longitude,
