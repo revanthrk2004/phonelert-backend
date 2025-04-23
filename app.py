@@ -547,7 +547,7 @@ def live_location():
         ai_decision = ai_decide_alert(user_id, latitude, longitude)
 
     if ai_decision == "unsafe":
-        send_email_alert(user_id, emails, latitude, longitude)
+        send_email_alert(user_id, emails, latitude, longitude, force_alert=force_alert)
         return jsonify({"message": "Alert sent", "ai_decision": ai_decision})
     else:
         return jsonify({"message": "No alert needed", "ai_decision": ai_decision})
@@ -637,7 +637,7 @@ def classify_location_by_ai(user_id, latitude, longitude):
         return "unsafe"
 
 
-def send_email_alert(user_id, recipient_emails, live_lat=None, live_long=None):
+def send_email_alert(user_id, recipient_emails, live_lat=None, live_long=None, force_alert=False):
     """Sends email alert based on stored location type (safe/unsafe)."""
     with app.app_context():
         phone_status = None
@@ -647,6 +647,12 @@ def send_email_alert(user_id, recipient_emails, live_lat=None, live_long=None):
                 live_lat, live_long = phone_status.last_latitude, phone_status.last_longitude
 
         location_type = classify_location_by_ai(user_id, live_lat, live_long)
+
+        # 🚨 Force override
+        if force_alert:
+            print("🛑 Force alert enabled — skipping AI checks!")
+            location_type = "unsafe"
+
         print(f"🧠 AI classified location as: {location_type}")
 
         if location_type == "unknown":
@@ -657,7 +663,7 @@ def send_email_alert(user_id, recipient_emails, live_lat=None, live_long=None):
                 "longitude": live_long
             }), 200
 
-        if location_type.lower() == "safe":
+        if location_type.lower() == "safe" and not force_alert:
             print("✅ AI: Safe location — skipping alert.")
             return
 
