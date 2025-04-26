@@ -1127,7 +1127,11 @@ def stop_tracking():
 
     print(f"🛑 Stopped tracking for user {user_id}")
     sys.stdout.flush()
-    return jsonify({"message": "✅ Tracking stopped successfully"}), 200
+    return jsonify({
+        "message": "✅ Tracking stopped successfully",
+        "stop_tracking": True  # ✅ Signal frontend to stop shake live updates
+    }), 200
+
 
 
 
