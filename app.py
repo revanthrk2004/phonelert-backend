@@ -1117,6 +1117,13 @@ def stop_tracking():
         sys.stdout.flush()
         return jsonify({"error": "User ID is required"}), 400
 
+    try:
+        user_id = int(user_id)  # 🧠 Convert to int (IMPORTANT)
+    except ValueError:
+        print("❌ Invalid user_id format")
+        sys.stdout.flush()
+        return jsonify({"error": "Invalid user_id format"}), 400    
+
     if user_id not in tracking_users:
         print(f"⚠️ No active tracking found for user {user_id}")
         sys.stdout.flush()
