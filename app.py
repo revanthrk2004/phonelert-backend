@@ -1127,7 +1127,11 @@ def stop_tracking():
     if user_id not in tracking_users:
         print(f"⚠️ No active tracking found for user {user_id}")
         sys.stdout.flush()
-        return jsonify({"error": "Tracking was not active for this user"}), 400
+        return jsonify({
+            "message": "⚠️ Tracking was already inactive",
+            "stop_tracking": True,
+            "stop_shake_alert": True  # ✅ Always send stop_shake_alert now
+        }), 200
 
     tracking_users[user_id]["active"] = False
     del tracking_users[user_id]
@@ -1136,7 +1140,8 @@ def stop_tracking():
     sys.stdout.flush()
     return jsonify({
         "message": "✅ Tracking stopped successfully",
-        "stop_tracking": True  # ✅ Signal frontend to stop shake live updates
+        "stop_tracking": True  
+        "stop_shake_alert": True  
     }), 200
 
 
