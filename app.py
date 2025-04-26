@@ -1140,7 +1140,7 @@ def stop_tracking():
     sys.stdout.flush()
     return jsonify({
         "message": "✅ Tracking stopped successfully",
-        "stop_tracking": True  
+        "stop_tracking": True,  
         "stop_shake_alert": True  
     }), 200
 
