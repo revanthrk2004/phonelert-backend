@@ -12,9 +12,7 @@ def update_location_frequency(user_id, location_name):
     location = Location.query.filter_by(user_id=user_id, name=location_name).first()
 
     if location:
-        location.visit_count += 1  # Increase visit count
-
-        # 🔥 If location is visited 3+ times, mark it as frequent
+        location.visit_count += 1  
         if location.visit_count >= 3:
             location.is_frequent = True
 
@@ -38,14 +36,14 @@ def add_location():
         update_location_frequency(user_id, data["name"])
         return jsonify({"message": "Location visit count updated!", "location": location.to_dict()}), 200
 
-    # Create new location
+    
     new_location = Location(
         user_id=user_id,
         name=data["name"],
         latitude=data["latitude"],
         longitude=data["longitude"],
-        visit_count=1,  # Start with 1 visit
-        is_frequent=False  # Not frequent yet
+        visit_count=1,  
+        is_frequent=False  
     )
 
     db.session.add(new_location)

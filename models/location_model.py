@@ -6,8 +6,8 @@ class Location(db.Model):
     name = db.Column(db.String(50), nullable=False)
     latitude = db.Column(db.Float, nullable=False)
     longitude = db.Column(db.Float, nullable=False)
-    visit_count = db.Column(db.Integer, default=1)  # Track visits
-    is_frequent = db.Column(db.Boolean, default=False)  # AI flag
+    visit_count = db.Column(db.Integer, default=1)  
+    is_frequent = db.Column(db.Boolean, default=False)  
 
     def to_dict(self):
         return {

@@ -12,7 +12,7 @@ class UserLocation(db.Model):
     location_type = db.Column(db.String(10), default="safe")
     radius = db.Column(db.Integer, default=50)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
-     # 👇 NEW LINE
+     
     visible = db.Column(db.Boolean, default=True)
     
     def __repr__(self):
@@ -22,15 +22,15 @@ class UserLocation(db.Model):
 
 class PhoneStatus(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True, nullable=False)  # ✅ Ensure correct FK type
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), unique=True, nullable=False)  
     last_latitude = db.Column(db.Float, nullable=True)
     last_longitude = db.Column(db.Float, nullable=True)
-    tracking_active = db.Column(db.Boolean, default=False)  # ✅ Tracks if monitoring is active
-    expo_push_token = db.Column(db.String, nullable=True)  # 🔔 New: For push notifications
+    tracking_active = db.Column(db.Boolean, default=False)  
+    expo_push_token = db.Column(db.String, nullable=True) 
 
 
  
-from models.user_model import User  # import instead of redefining
+from models.user_model import User  
 
 class SavedLocation(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -52,7 +52,7 @@ class AlertHistory(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     was_anomaly = db.Column(db.Boolean, default=False)
     reason = db.Column(db.String(100))
-    risk_score = db.Column(db.Float, nullable=True)  # 🔥 NEW COLUMN
+    risk_score = db.Column(db.Float, nullable=True)  
 
     def __repr__(self):
         return f"<AlertHistory user_id={self.user_id}, location_type={self.location_type}, ai_decision={self.ai_decision}, risk_score={self.risk_score}>"

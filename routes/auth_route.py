@@ -39,7 +39,7 @@ def login():
     if not email_or_id or not password:
         return jsonify({"error": "Missing email or password"}), 400
 
-    # Check if input is numeric (assume it's user ID)
+    
     user = None
     if email_or_id.isdigit():
         user = User.query.filter_by(id=int(email_or_id)).first()
